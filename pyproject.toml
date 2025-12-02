@@ -46,9 +46,9 @@ dev = [
 slurm-dashboard = "slurm_dashboard.__main__:main"
 
 [project.urls]
-Homepage = "https://github.com/jroth/slurm-dashboard"
-Repository = "https://github.com/jroth/slurm-dashboard"
-Issues = "https://github.com/jroth/slurm-dashboard/issues"
+Homepage = "https://github.com/andropar/slurmboard"
+Repository = "https://github.com/andropar/slurmboard"
+Issues = "https://github.com/andropar/slurmboard/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
