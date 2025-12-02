@@ -2851,19 +2851,13 @@ async function loadInsights() {
 function renderInsights() {
     const content = document.getElementById('insights-content');
     const panel = document.getElementById('insights-panel');
-    const toggle = document.getElementById('insights-toggle');
 
     if (!content || !insightsData) return;
 
-    // Handle collapsed state
-    if (insightsCollapsed) {
-        panel.classList.add('collapsed');
-        toggle.textContent = '+';
+    // Handle collapsed/minimized state
+    if (insightsCollapsed || panel.classList.contains('widget-minimized')) {
         return;
     }
-
-    panel.classList.remove('collapsed');
-    toggle.textContent = '−';
 
     // Check if we have any data
     if (!insightsData.job_stats || insightsData.job_stats.total_jobs === 0) {
