@@ -21,10 +21,22 @@
             <button class="quick-submit-btn" onclick="openSubmitModal()" title="Submit new job (Ctrl+N)">+ Submit</button>
             <button class="templates-btn" onclick="openTemplateModal()" title="Manage templates">Templates</button>
             <div class="view-toggle">
-                <button class="view-btn active" id="view-table-btn" onclick="setView('table')" title="Table view">Table</button>
-                <button class="view-btn" id="view-timeline-btn" onclick="setView('timeline')" title="Timeline view">Timeline</button>
-                <button class="view-btn" id="view-dag-btn" onclick="setView('dag')" title="Pipeline DAG view">Pipelines</button>
-                <button class="view-btn" id="view-heatmap-btn" onclick="setView('heatmap')" title="Activity heatmaps">Heatmap</button>
+                <button class="view-btn active" id="view-table-btn" onclick="setView('table')" title="Table view">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+                    Table
+                </button>
+                <button class="view-btn" id="view-timeline-btn" onclick="setView('timeline')" title="Timeline view">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="3"/><path d="M4 12h8v-4h8"/><path d="M4 18h4v-3h8"/><path d="M4 6h12v3"/></svg>
+                    Timeline
+                </button>
+                <button class="view-btn" id="view-dag-btn" onclick="setView('dag')" title="Pipeline DAG view">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="6" r="3"/><circle cx="19" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="5" y1="9" x2="12" y2="15"/><line x1="19" y1="9" x2="12" y2="15"/></svg>
+                    Pipelines
+                </button>
+                <button class="view-btn" id="view-heatmap-btn" onclick="setView('heatmap')" title="Activity heatmaps">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                    Heatmap
+                </button>
             </div>
             <div class="search-wrapper">
                 <input type="text" class="search-box" id="search-box" placeholder="Search jobs... (/)">
@@ -113,7 +125,7 @@
         <div class="table-column" id="table-column">
             <div class="card widget insights-panel" id="insights-panel" data-widget="insights">
                 <div class="widget-header insights-header">
-                    <h2>Insights</h2>
+                    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/><path d="M12 2a10 10 0 0 1 10 10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>Insights</h2>
                     <div class="widget-controls">
                         <button class="widget-minimize" onclick="toggleWidgetMinimize('insights-panel')" title="Minimize">−</button>
                     </div>
@@ -125,7 +137,7 @@
             <div class="card widget running-wrapper" id="running-panel" data-widget="running">
                 <div class="widget-header table-header-row">
                     <div class="table-header-left">
-                        <h2 style="margin-bottom: 0;">Running Jobs</h2>
+                        <h2 style="margin-bottom: 0;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10,8 16,12 10,16 10,8"/></svg>Running Jobs</h2>
                         <div class="stat-badge">
                             <span>Running</span>
                             <span class="stat-num" id="stat-running">0</span>
@@ -161,7 +173,7 @@
             <div class="card widget recent-wrapper" id="recent-panel" data-widget="recent">
                 <div class="widget-header recent-header">
                     <div class="recent-header-left">
-                        <h2>Recent Jobs</h2>
+                        <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>Recent Jobs</h2>
                         <button class="compare-btn" id="compare-btn" onclick="startComparison()" style="display: none;">Compare</button>
                     </div>
                     <div class="recent-header-right">
@@ -198,7 +210,7 @@
         </div>
         <div class="card widget" id="log-panel" data-widget="logs">
             <div class="widget-header log-header">
-                <h2 id="log-title">Logs</h2>
+                <h2 id="log-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>Logs</h2>
                 <div class="log-controls">
                     <div class="annotation-nav" id="annotation-nav">
                         <span class="annotation-count" id="annotation-count"></span>
@@ -304,15 +316,14 @@
         </div>
     </div>
     <div class="heatmap-view" id="heatmap-view" style="display: none;">
-        <div class="heatmap-header">
-            <div class="heatmap-controls">
-                <div class="heatmap-view-toggle">
-                    <button class="heatmap-tab active" data-view="activity" onclick="setHeatmapView('activity')">Activity</button>
-                    <button class="heatmap-tab" data-view="success" onclick="setHeatmapView('success')">Success Rate</button>
-                    <button class="heatmap-tab" data-view="pattern" onclick="setHeatmapView('pattern')">Day/Hour Pattern</button>
+        <div class="heatmap-dashboard">
+            <div class="heatmap-header-bar">
+                <div class="heatmap-title-section">
+                    <h1 class="heatmap-main-title">Activity Analytics</h1>
+                    <p class="heatmap-subtitle">Job submission patterns and success metrics</p>
                 </div>
                 <div class="heatmap-days-controls">
-                    <label>History:</label>
+                    <span class="heatmap-days-label">Time Range</span>
                     <select id="heatmap-days" onchange="loadHeatmapData()">
                         <option value="30">30 days</option>
                         <option value="60">60 days</option>
@@ -322,18 +333,83 @@
                     </select>
                 </div>
             </div>
-        </div>
-        <div class="heatmap-container" id="heatmap-container">
-            <div class="heatmap-loading">Loading activity data...</div>
-        </div>
-        <div class="heatmap-legend" id="heatmap-legend">
-            <span class="heatmap-legend-label">Less</span>
-            <span class="heatmap-legend-cell" data-level="0"></span>
-            <span class="heatmap-legend-cell" data-level="1"></span>
-            <span class="heatmap-legend-cell" data-level="2"></span>
-            <span class="heatmap-legend-cell" data-level="3"></span>
-            <span class="heatmap-legend-cell" data-level="4"></span>
-            <span class="heatmap-legend-label">More</span>
+
+            <div class="heatmap-stats-row" id="heatmap-stats-row">
+                <div class="heatmap-stat-card">
+                    <div class="heatmap-stat-icon jobs">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+                    </div>
+                    <div class="heatmap-stat-info">
+                        <div class="heatmap-stat-value" id="stat-total-jobs">-</div>
+                        <div class="heatmap-stat-label">Total Jobs</div>
+                    </div>
+                </div>
+                <div class="heatmap-stat-card">
+                    <div class="heatmap-stat-icon days">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    </div>
+                    <div class="heatmap-stat-info">
+                        <div class="heatmap-stat-value" id="stat-active-days">-</div>
+                        <div class="heatmap-stat-label">Active Days</div>
+                    </div>
+                </div>
+                <div class="heatmap-stat-card">
+                    <div class="heatmap-stat-icon avg">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
+                    </div>
+                    <div class="heatmap-stat-info">
+                        <div class="heatmap-stat-value" id="stat-avg-daily">-</div>
+                        <div class="heatmap-stat-label">Avg/Day</div>
+                    </div>
+                </div>
+                <div class="heatmap-stat-card">
+                    <div class="heatmap-stat-icon success">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    </div>
+                    <div class="heatmap-stat-info">
+                        <div class="heatmap-stat-value" id="stat-success-rate">-</div>
+                        <div class="heatmap-stat-label">Success Rate</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="heatmap-grid-layout">
+                <div class="heatmap-panel heatmap-activity-panel">
+                    <div class="heatmap-panel-header">
+                        <h3 class="heatmap-panel-title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                            Submission Activity
+                        </h3>
+                    </div>
+                    <div class="heatmap-panel-content" id="heatmap-activity-container">
+                        <div class="heatmap-loading">Loading...</div>
+                    </div>
+                </div>
+
+                <div class="heatmap-panel heatmap-success-panel">
+                    <div class="heatmap-panel-header">
+                        <h3 class="heatmap-panel-title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                            Success Rate
+                        </h3>
+                    </div>
+                    <div class="heatmap-panel-content" id="heatmap-success-container">
+                        <div class="heatmap-loading">Loading...</div>
+                    </div>
+                </div>
+
+                <div class="heatmap-panel heatmap-pattern-panel">
+                    <div class="heatmap-panel-header">
+                        <h3 class="heatmap-panel-title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                            Weekly Pattern
+                        </h3>
+                    </div>
+                    <div class="heatmap-panel-content" id="heatmap-pattern-container">
+                        <div class="heatmap-loading">Loading...</div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
     <!-- Quick Submit Modal -->

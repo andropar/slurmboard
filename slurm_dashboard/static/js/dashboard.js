@@ -3039,70 +3039,58 @@ async function loadJobPrediction(jobId) {
 // Heatmap Functions
 async function loadHeatmapData() {
     const days = document.getElementById('heatmap-days').value;
-    const container = document.getElementById('heatmap-container');
-    container.innerHTML = '<div class="heatmap-loading">Loading activity data...</div>';
+
+    // Show loading state in all containers
+    const containers = ['heatmap-activity-container', 'heatmap-success-container', 'heatmap-pattern-container'];
+    containers.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = '<div class="heatmap-loading">Loading...</div>';
+    });
 
     try {
         const res = await fetch(`/api/heatmap?days=${days}`);
         if (!res.ok) throw new Error('Failed to load');
         heatmapData = await res.json();
-        renderHeatmap();
+        renderAllHeatmaps();
     } catch (err) {
         console.error('Heatmap load error:', err);
-        container.innerHTML = '<div class="heatmap-empty">Failed to load activity data</div>';
+        containers.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = '<div class="heatmap-empty">Failed to load data</div>';
+        });
     }
 }
 
-function setHeatmapView(view) {
-    currentHeatmapView = view;
-    document.querySelectorAll('.heatmap-tab').forEach(tab => {
-        tab.classList.toggle('active', tab.dataset.view === view);
-    });
-
-    // Update legend for success rate view
-    const legend = document.getElementById('heatmap-legend');
-    if (view === 'success') {
-        legend.innerHTML = `
-            <span class="heatmap-legend-label">0%</span>
-            <span class="heatmap-legend-cell" data-level="4" style="background: var(--eff-bad);"></span>
-            <span class="heatmap-legend-cell" data-level="3" style="background: #ed8936;"></span>
-            <span class="heatmap-legend-cell" data-level="2" style="background: var(--eff-medium);"></span>
-            <span class="heatmap-legend-cell" data-level="1" style="background: #68d391;"></span>
-            <span class="heatmap-legend-cell" data-level="0" style="background: var(--eff-good);"></span>
-            <span class="heatmap-legend-label">100%</span>
-        `;
-    } else {
-        legend.innerHTML = `
-            <span class="heatmap-legend-label">Less</span>
-            <span class="heatmap-legend-cell" data-level="0"></span>
-            <span class="heatmap-legend-cell" data-level="1"></span>
-            <span class="heatmap-legend-cell" data-level="2"></span>
-            <span class="heatmap-legend-cell" data-level="3"></span>
-            <span class="heatmap-legend-cell" data-level="4"></span>
-            <span class="heatmap-legend-label">More</span>
-        `;
-    }
-
-    renderHeatmap();
-}
-
-function renderHeatmap() {
-    const container = document.getElementById('heatmap-container');
-
+function renderAllHeatmaps() {
     if (!heatmapData || heatmapData.error) {
-        container.innerHTML = '<div class="heatmap-empty">No activity data available</div>';
         return;
     }
 
-    if (currentHeatmapView === 'pattern') {
-        renderHourlyPattern(container);
-    } else {
-        renderActivityHeatmap(container);
-    }
+    // Update stats
+    const daily = heatmapData.daily || [];
+    const activeDays = daily.filter(d => d.total > 0).length;
+    const totalCompleted = daily.reduce((sum, d) => sum + (d.completed || 0), 0);
+    const totalJobs = heatmapData.total_jobs || 0;
+    const successRate = totalJobs > 0 ? Math.round((totalCompleted / totalJobs) * 100) : 0;
+
+    document.getElementById('stat-total-jobs').textContent = totalJobs.toLocaleString();
+    document.getElementById('stat-active-days').textContent = activeDays;
+    document.getElementById('stat-avg-daily').textContent = activeDays > 0 ? Math.round(totalJobs / activeDays) : 0;
+    document.getElementById('stat-success-rate').textContent = successRate + '%';
+
+    // Render all three views
+    renderActivityCalendar(document.getElementById('heatmap-activity-container'), false);
+    renderActivityCalendar(document.getElementById('heatmap-success-container'), true);
+    renderHourlyPatternGrid(document.getElementById('heatmap-pattern-container'));
 }
 
-function renderActivityHeatmap(container) {
-    const isSuccessView = currentHeatmapView === 'success';
+// Legacy function for compatibility
+function renderHeatmap() {
+    renderAllHeatmaps();
+}
+
+function renderActivityCalendar(container, isSuccessView) {
+    if (!container) return;
     const daily = heatmapData.daily || [];
 
     if (daily.length === 0) {
@@ -3134,13 +3122,13 @@ function renderActivityHeatmap(container) {
     // Day labels
     const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-    // Build HTML
+    // Build HTML with new calendar classes
     let html = `
-        <div class="activity-heatmap">
-            <div class="heatmap-day-labels">
-                ${dayLabels.map((d, i) => `<div class="heatmap-day-label">${i % 2 === 1 ? d : ''}</div>`).join('')}
+        <div class="activity-calendar">
+            <div class="calendar-day-labels">
+                ${dayLabels.map((d, i) => `<div class="calendar-day-label">${i % 2 === 1 ? d : ''}</div>`).join('')}
             </div>
-            <div class="heatmap-grid">
+            <div class="calendar-grid">
     `;
 
     // Month labels
@@ -3156,49 +3144,55 @@ function renderActivityHeatmap(container) {
         }
     }
 
-    html += '<div class="heatmap-month-labels">';
+    html += '<div class="calendar-month-labels">';
     let monthIdx = 0;
+    let lastLabelEnd = 0;
     for (let i = 0; i < weeks.length; i++) {
         if (monthIdx < months.length && months[monthIdx].week === i) {
-            html += `<div class="heatmap-month-label" style="grid-column: ${i + 1};">${months[monthIdx].month}</div>`;
+            // Calculate spacing to push labels to correct positions
+            const spacing = (i - lastLabelEnd) * 16;
+            html += `<div class="calendar-month-label" style="margin-left: ${spacing}px;">${months[monthIdx].month}</div>`;
+            lastLabelEnd = i + 3; // Approximate label width
             monthIdx++;
         }
     }
     html += '</div>';
 
-    html += '<div class="heatmap-weeks">';
+    html += '<div class="calendar-weeks">';
 
     for (const week of weeks) {
-        html += '<div class="heatmap-week">';
+        html += '<div class="calendar-week">';
 
         // Pad start of week if needed
         if (week.length > 0) {
             const firstDayOfWeek = new Date(week[0].date).getDay();
             for (let i = 0; i < firstDayOfWeek; i++) {
-                html += '<div class="heatmap-cell empty"></div>';
+                html += '<div class="calendar-cell empty"></div>';
             }
         }
 
         for (const day of week) {
             let level, value, tooltip;
+            let hasFailures = false;
 
             if (isSuccessView) {
                 value = day.success_rate || 0;
-                // Invert for success rate (100% = green = level 0)
+                hasFailures = day.failed > 0;
+                // Higher value = more success = higher level (green)
                 if (day.total === 0) {
-                    level = -1; // Empty
-                } else if (value >= 90) {
                     level = 0;
+                } else if (value >= 90) {
+                    level = 4;
                 } else if (value >= 70) {
-                    level = 1;
+                    level = 3;
                 } else if (value >= 50) {
                     level = 2;
                 } else if (value >= 30) {
-                    level = 3;
+                    level = 1;
                 } else {
-                    level = 4;
+                    level = 0;
                 }
-                tooltip = `${day.date}: ${value}% success rate (${day.completed}/${day.total} completed)`;
+                tooltip = `${day.date}: ${Math.round(value)}% success rate (${day.completed}/${day.total} completed)`;
             } else {
                 value = day.total;
                 if (value === 0) {
@@ -3215,9 +3209,10 @@ function renderActivityHeatmap(container) {
                 tooltip = `${day.date}: ${day.total} jobs (${day.completed} completed, ${day.failed} failed, ${day.cancelled} cancelled)`;
             }
 
-            const successClass = isSuccessView && level >= 0 ? `success-level-${level}` : '';
+            const successClass = isSuccessView ? 'success' : '';
+            const failureClass = hasFailures && isSuccessView ? 'has-failures' : '';
 
-            html += `<div class="heatmap-cell ${level === -1 ? 'empty' : ''} ${successClass}"
+            html += `<div class="calendar-cell ${successClass} ${failureClass}"
                          data-level="${level}"
                          title="${tooltip}"
                          onclick="filterJobsByDate('${day.date}')"></div>`;
@@ -3228,28 +3223,25 @@ function renderActivityHeatmap(container) {
 
     html += '</div></div></div>';
 
-    // Summary stats
+    // Add legend
+    const legendColor = isSuccessView ? 'success' : '';
     html += `
-        <div class="heatmap-summary">
-            <div class="heatmap-stat">
-                <span class="heatmap-stat-value">${heatmapData.total_jobs}</span>
-                <span class="heatmap-stat-label">Total Jobs</span>
-            </div>
-            <div class="heatmap-stat">
-                <span class="heatmap-stat-value">${daily.filter(d => d.total > 0).length}</span>
-                <span class="heatmap-stat-label">Active Days</span>
-            </div>
-            <div class="heatmap-stat">
-                <span class="heatmap-stat-value">${Math.round(heatmapData.total_jobs / Math.max(1, daily.filter(d => d.total > 0).length))}</span>
-                <span class="heatmap-stat-label">Avg Jobs/Day</span>
-            </div>
+        <div class="heatmap-panel-legend">
+            <span class="legend-label">Less</span>
+            <span class="legend-cell ${legendColor}" data-level="0"></span>
+            <span class="legend-cell ${legendColor}" data-level="1"></span>
+            <span class="legend-cell ${legendColor}" data-level="2"></span>
+            <span class="legend-cell ${legendColor}" data-level="3"></span>
+            <span class="legend-cell ${legendColor}" data-level="4"></span>
+            <span class="legend-label">More</span>
         </div>
     `;
 
     container.innerHTML = html;
 }
 
-function renderHourlyPattern(container) {
+function renderHourlyPatternGrid(container) {
+    if (!container) return;
     const hourly = heatmapData.hourly || [];
 
     if (hourly.length === 0) {
@@ -3259,20 +3251,25 @@ function renderHourlyPattern(container) {
 
     const maxCount = heatmapData.max_hourly || 1;
     const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const hourLabels = ['12a', '', '', '3a', '', '', '6a', '', '', '9a', '', '', '12p', '', '', '3p', '', '', '6p', '', '', '9p', '', ''];
 
-    let html = `
-        <div class="pattern-heatmap">
-            <div class="pattern-header">
-                <div class="pattern-header-spacer"></div>
-                ${hourLabels.map((h, i) => `<div class="pattern-hour-label">${h}</div>`).join('')}
-            </div>
-            <div class="pattern-body">
-    `;
+    // Hour labels at top
+    let html = `<div class="weekly-pattern-grid">
+        <div class="pattern-hour-labels">`;
+
+    for (let h = 0; h < 24; h++) {
+        if (h % 3 === 0) {
+            const label = h === 0 ? '12a' : h < 12 ? `${h}a` : h === 12 ? '12p' : `${h-12}p`;
+            html += `<span class="pattern-hour-label">${label}</span>`;
+        } else {
+            html += `<span class="pattern-hour-label"></span>`;
+        }
+    }
+    html += `</div><div class="pattern-rows">`;
 
     for (let dow = 0; dow < 7; dow++) {
         html += `<div class="pattern-row">
-            <div class="pattern-day-label">${dayLabels[dow]}</div>`;
+            <div class="pattern-day-name">${dayLabels[dow]}</div>
+            <div class="pattern-cells">`;
 
         for (let hour = 0; hour < 24; hour++) {
             const data = hourly.find(h => h.day === dow && h.hour === hour) || { count: 0 };
@@ -3297,27 +3294,23 @@ function renderHourlyPattern(container) {
             html += `<div class="pattern-cell" data-level="${level}" title="${tooltip}"></div>`;
         }
 
-        html += '</div>';
+        html += '</div></div>';
     }
 
     html += '</div></div>';
 
-    // Find peak times
-    const sortedHourly = [...hourly].sort((a, b) => b.count - a.count);
-    const peakTimes = sortedHourly.slice(0, 3).filter(h => h.count > 0);
-
-    if (peakTimes.length > 0) {
-        html += `
-            <div class="heatmap-summary">
-                <div class="heatmap-stat">
-                    <span class="heatmap-stat-label">Peak Times</span>
-                    <div class="peak-times">
-                        ${peakTimes.map(p => `<span class="peak-time">${dayLabels[p.day]} ${p.hour}:00 (${p.count} jobs)</span>`).join('')}
-                    </div>
-                </div>
-            </div>
-        `;
-    }
+    // Add legend
+    html += `
+        <div class="heatmap-panel-legend">
+            <span class="legend-label">Less</span>
+            <span class="legend-cell pattern" data-level="0"></span>
+            <span class="legend-cell pattern" data-level="1"></span>
+            <span class="legend-cell pattern" data-level="2"></span>
+            <span class="legend-cell pattern" data-level="3"></span>
+            <span class="legend-cell pattern" data-level="4"></span>
+            <span class="legend-label">More</span>
+        </div>
+    `;
 
     container.innerHTML = html;
 }
