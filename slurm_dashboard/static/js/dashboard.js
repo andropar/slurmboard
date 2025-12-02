@@ -2972,10 +2972,10 @@ function renderInsights() {
                             <span class="cost-label">Daily Avg</span>
                         </div>
                     </div>
-                    ${costData.by_partition && Object.keys(costData.by_partition).length > 0 ? `
+                    ${costData.by_partition && costData.by_partition.length > 0 ? `
                         <div class="cost-breakdown">
-                            ${Object.entries(costData.by_partition).slice(0, 3).map(([part, sus]) =>
-                                `<span class="cost-partition"><span class="partition-name">${part}</span>: ${formatSUs(sus)}</span>`
+                            ${costData.by_partition.slice(0, 3).map(item =>
+                                `<span class="cost-partition"><span class="partition-name">${item.partition}</span>: ${formatSUs(item.sus)}</span>`
                             ).join('')}
                         </div>
                     ` : ''}

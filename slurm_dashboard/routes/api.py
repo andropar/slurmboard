@@ -20,6 +20,7 @@ from slurm_dashboard.services.slurm import (
     get_job_history,
     get_job_insights,
     get_job_resources,
+    get_job_states_batch,
     get_job_submit_info,
     get_queue_info,
     get_running_jobs,
@@ -48,6 +49,16 @@ def jobs() -> Response:
     pattern_hash = hash(config.log_pattern.pattern)
     recent = cached_recent(now_bucket, pattern_hash)
     running = get_running_jobs(config.user)
+
+    # Enrich recent jobs with state from sacct
+    if recent:
+        job_ids = [job["id"] for job in recent if job.get("id")]
+        states = get_job_states_batch(job_ids, config.user)
+        for job in recent:
+            job_id = job.get("id")
+            if job_id and job_id in states:
+                job["state"] = states[job_id]
+
     return jsonify({"running": running, "recent": recent})
 
 

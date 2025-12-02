@@ -81,6 +81,57 @@ def get_running_jobs(user: str) -> list[dict]:
     return rows
 
 
+def get_job_states_batch(job_ids: list[str], user: str) -> dict[str, str]:
+    """Get states for multiple jobs in a single sacct query.
+
+    Args:
+        job_ids: List of job IDs to query
+        user: Username to filter by
+
+    Returns:
+        Dictionary mapping job_id to state string
+    """
+    if not job_ids:
+        return {}
+
+    # Query all job IDs at once using comma-separated list
+    job_list = ",".join(job_ids)
+    try:
+        proc = subprocess.run(
+            [
+                "sacct",
+                "-j",
+                job_list,
+                "-u",
+                user,
+                "--noheader",
+                "--format=JobID,State",
+                "-X",  # Only show main job entries, not steps
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return {}
+
+    if proc.returncode != 0:
+        return {}
+
+    states = {}
+    for line in proc.stdout.strip().splitlines():
+        parts = line.split()
+        if len(parts) >= 2:
+            job_id = parts[0].strip()
+            state = parts[1].strip()
+            # Handle job IDs that might have array indices (e.g., "12345_0")
+            base_id = job_id.split("_")[0]
+            states[base_id] = state
+
+    return states
+
+
 def get_job_details(job_id: str, user: str) -> dict:
     """Get detailed information about a job from sacct."""
     fmt = "JobID,JobName,State,ExitCode,End,CPUTimeRAW,TotalCPU,ReqMem,MaxRSS,AllocCPUS,AllocGRES,Elapsed"
