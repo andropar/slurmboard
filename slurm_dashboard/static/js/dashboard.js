@@ -2965,66 +2965,61 @@ function renderInsights() {
     const eff = insightsData.efficiency_score || {};
     let html = '';
 
-    // Efficiency Score Card
+    // Row 1: Efficiency + Stats side by side
     const grade = eff.grade || 'C';
     const gradeClass = 'grade-' + grade.toLowerCase();
 
     html += `
         <div class="insight-card efficiency-card ${gradeClass}">
-            <div class="insight-icon">📊</div>
             <div class="insight-content">
                 <div class="insight-title">Efficiency Score</div>
-                <div class="efficiency-score ${gradeClass}">
+                <div class="efficiency-display">
                     <span class="efficiency-grade">${grade}</span>
-                    <span class="efficiency-label">${eff.label || 'Analyzing...'}</span>
-                </div>
-                <div class="efficiency-details">
-                    <span>Memory: ${eff.memory_efficiency || '—'}%</span>
-                    <span>Time: ${eff.time_efficiency || '—'}%</span>
+                    <div class="efficiency-info">
+                        <span class="efficiency-label">${eff.label || 'Analyzing...'}</span>
+                        <div class="efficiency-details">
+                            <span>Memory: ${eff.memory_efficiency || '—'}%</span>
+                            <span>Time: ${eff.time_efficiency || '—'}%</span>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
-    `;
-
-    // Job Stats Card
-    html += `
-        <div class="insight-card">
-            <div class="insight-icon">📈</div>
+        <div class="insight-card stats-card">
             <div class="insight-content">
                 <div class="insight-title">Job Statistics</div>
-                <div class="stats-grid">
-                    <div class="stat-item">
+                <div class="stats-row">
+                    <div class="stat-box">
                         <span class="stat-value">${stats.total_jobs.toLocaleString()}</span>
-                        <span class="stat-label">Total Jobs</span>
+                        <span class="stat-label">Total</span>
                     </div>
-                    <div class="stat-item success">
+                    <div class="stat-box ${stats.success_rate >= 70 ? 'success' : stats.success_rate >= 40 ? '' : 'warning'}">
                         <span class="stat-value">${stats.success_rate}%</span>
-                        <span class="stat-label">Success Rate</span>
+                        <span class="stat-label">Success</span>
                     </div>
-                    <div class="stat-item ${stats.failed > 0 ? 'warning' : ''}">
-                        <span class="stat-value">${stats.failed}</span>
+                    <div class="stat-box ${stats.failed > 0 ? 'warning' : ''}">
+                        <span class="stat-value">${stats.failed.toLocaleString()}</span>
                         <span class="stat-label">Failed</span>
                     </div>
-                    <div class="stat-item ${stats.timeout > 0 ? 'warning' : ''}">
+                    <div class="stat-box ${stats.timeout > 0 ? 'warning' : ''}">
                         <span class="stat-value">${stats.timeout}</span>
-                        <span class="stat-label">Timeouts</span>
+                        <span class="stat-label">Timeout</span>
                     </div>
                 </div>
             </div>
         </div>
     `;
 
-    // Resource Usage Card
+    // Row 2: Resource Usage + Recommendations
     if (costData) {
         const cpuHours = costData.total_cpu_hours || 0;
         const gpuHours = costData.total_gpu_hours || 0;
 
         html += `
             <div class="insight-card">
-                <div class="insight-icon">⚡</div>
                 <div class="insight-content">
                     <div class="insight-title">Resource Usage</div>
-                    <div class="resource-grid">
+                    <div class="resource-row">
                         <div class="resource-item">
                             <div class="resource-value">${formatHours(cpuHours)}</div>
                             <div class="resource-label">CPU Hours</div>
@@ -3042,7 +3037,7 @@ function renderInsights() {
                                 const parts = [];
                                 if (item.cpu_hours > 0) parts.push(`${formatHours(item.cpu_hours)} CPU`);
                                 if (item.gpu_hours > 0) parts.push(`${formatHours(item.gpu_hours)} GPU`);
-                                return `<span class="resource-partition"><span class="partition-name">${item.partition}</span> ${parts.join(', ')}</span>`;
+                                return `<span class="resource-tag"><strong>${item.partition}</strong> ${parts.join(', ')}</span>`;
                             }).join('')}
                         </div>
                     ` : ''}
@@ -3051,14 +3046,97 @@ function renderInsights() {
         `;
     }
 
-    // Activity Chart
+    // Recommendations (Time + Memory combined if both exist)
+    const hasTimeRec = insightsData.time_insights && insightsData.time_insights.recommendation;
+    const hasMemRec = insightsData.memory_insights && insightsData.memory_insights.recommendation;
+
+    if (hasTimeRec || hasMemRec) {
+        html += `<div class="insight-card recommendations-card">
+            <div class="insight-content">
+                <div class="insight-title">Recommendations</div>
+                <div class="recommendations-list">`;
+
+        if (hasTimeRec) {
+            const time = insightsData.time_insights;
+            html += `
+                <div class="recommendation-item">
+                    <span class="rec-icon">⏱️</span>
+                    <div class="rec-content">
+                        <div class="rec-text">${time.recommendation}</div>
+                        <div class="rec-meta">Based on ${time.sample_count} jobs</div>
+                    </div>
+                </div>`;
+        }
+
+        if (hasMemRec) {
+            const mem = insightsData.memory_insights;
+            html += `
+                <div class="recommendation-item">
+                    <span class="rec-icon">💾</span>
+                    <div class="rec-content">
+                        <div class="rec-text">${mem.recommendation}</div>
+                        <div class="rec-meta">Based on ${mem.sample_count} jobs</div>
+                    </div>
+                </div>`;
+        }
+
+        html += `</div></div></div>`;
+    }
+
+    // Row 3: Top Job Types + Failure Alerts
+    if (insightsData.job_stats.job_names && insightsData.job_stats.job_names.length > 0) {
+        const topNames = insightsData.job_stats.job_names.slice(0, 5);
+        const maxCount = topNames[0]?.count || 1;
+        html += `
+            <div class="insight-card jobs-card">
+                <div class="insight-content">
+                    <div class="insight-title">Top Job Types</div>
+                    <div class="job-types-list">
+                        ${topNames.map((job, i) => `
+                            <div class="job-type-row">
+                                <span class="job-rank">${i + 1}</span>
+                                <span class="job-type-name" title="${job.name}">${job.name}</span>
+                                <span class="job-type-count">${job.count.toLocaleString()}</span>
+                                <div class="job-type-bar" style="--bar-width: ${(job.count / maxCount) * 100}%"></div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    // Failure Alerts (combined into one card)
+    if (insightsData.failure_patterns && insightsData.failure_patterns.length > 0) {
+        html += `
+            <div class="insight-card alerts-card">
+                <div class="insight-content">
+                    <div class="insight-title">⚠️ Failure Alerts</div>
+                    <div class="alerts-list">
+                        ${insightsData.failure_patterns.slice(0, 3).map(pattern => {
+                            const failRate = pattern.failure_rate || Math.round((pattern.failed / pattern.total) * 100);
+                            return `
+                                <div class="alert-item">
+                                    <div class="alert-info">
+                                        <strong>${pattern.partition || 'Pattern'}</strong>
+                                        <span class="alert-detail">${pattern.failed}/${pattern.total} jobs failed</span>
+                                    </div>
+                                    <span class="alert-rate">${failRate}%</span>
+                                </div>`;
+                        }).join('')}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    // Activity Chart (full width at bottom)
     if (insightsData.heatmapData && insightsData.heatmapData.daily) {
         const daily = insightsData.heatmapData.daily.slice(-30);
         const maxDaily = Math.max(...daily.map(d => d.total), 1);
 
         html += `
             <div class="insight-card activity-card">
-                <div class="insight-icon">📅</div>
                 <div class="insight-content">
                     <div class="insight-title">Daily Activity (Last 30 Days)</div>
                     <div class="activity-bars">
@@ -3071,77 +3149,6 @@ function renderInsights() {
                 </div>
             </div>
         `;
-    }
-
-    // Time Recommendation
-    if (insightsData.time_insights && insightsData.time_insights.recommendation) {
-        const time = insightsData.time_insights;
-        html += `
-            <div class="insight-card">
-                <div class="insight-icon">⏱️</div>
-                <div class="insight-content">
-                    <div class="insight-title">Time Optimization</div>
-                    <div class="recommendation-text">${time.recommendation}</div>
-                    <div class="recommendation-meta">Based on ${time.sample_count} completed jobs</div>
-                </div>
-            </div>
-        `;
-    }
-
-    // Memory Recommendation
-    if (insightsData.memory_insights && insightsData.memory_insights.recommendation) {
-        const mem = insightsData.memory_insights;
-        html += `
-            <div class="insight-card">
-                <div class="insight-icon">💾</div>
-                <div class="insight-content">
-                    <div class="insight-title">Memory Optimization</div>
-                    <div class="recommendation-text">${mem.recommendation}</div>
-                    <div class="recommendation-meta">Based on ${mem.sample_count} completed jobs</div>
-                </div>
-            </div>
-        `;
-    }
-
-    // Top Job Types
-    if (insightsData.job_stats.job_names && insightsData.job_stats.job_names.length > 0) {
-        const topNames = insightsData.job_stats.job_names.slice(0, 5);
-        html += `
-            <div class="insight-card">
-                <div class="insight-icon">📋</div>
-                <div class="insight-content">
-                    <div class="insight-title">Top Job Types</div>
-                    <div class="stats-grid" style="grid-template-columns: 1fr;">
-                        ${topNames.map((job, i) => `
-                            <div class="stat-item" style="text-align: left; display: flex; justify-content: space-between;">
-                                <span style="color: var(--text-muted);">#${i + 1}</span>
-                                <span style="flex: 1; margin: 0 8px; overflow: hidden; text-overflow: ellipsis;" title="${job.name}">${job.name}</span>
-                                <span class="stat-value" style="font-size: 14px;">${job.count}</span>
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    // Failure Pattern Alerts
-    if (insightsData.failure_patterns && insightsData.failure_patterns.length > 0) {
-        for (const pattern of insightsData.failure_patterns.slice(0, 2)) {
-            const failRate = pattern.failure_rate || Math.round((pattern.failed / pattern.total) * 100);
-            html += `
-                <div class="insight-card warning-card">
-                    <div class="insight-icon">⚠️</div>
-                    <div class="insight-content">
-                        <div class="insight-title">Failure Alert</div>
-                        <div class="warning-text">
-                            ${pattern.type === 'partition' ? `<strong>Partition: ${pattern.partition}</strong> - ` : ''}${pattern.message}
-                        </div>
-                        <div class="recommendation-meta">${failRate}% failure rate</div>
-                    </div>
-                </div>
-            `;
-        }
     }
 
     content.innerHTML = html;
