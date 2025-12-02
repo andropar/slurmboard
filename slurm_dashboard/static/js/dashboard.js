@@ -3158,7 +3158,9 @@ function renderActivityCalendar(container, isSuccessView) {
             <div class="calendar-grid">
     `;
 
-    // Month labels
+    // Month labels - calculate position based on week index
+    // Each week column is 13px (cell) + 3px (gap) = 16px
+    const weekWidth = 16;
     let lastMonth = -1;
     const months = [];
     for (let i = 0; i < weeks.length; i++) {
@@ -3172,16 +3174,9 @@ function renderActivityCalendar(container, isSuccessView) {
     }
 
     html += '<div class="calendar-month-labels">';
-    let monthIdx = 0;
-    let lastLabelEnd = 0;
-    for (let i = 0; i < weeks.length; i++) {
-        if (monthIdx < months.length && months[monthIdx].week === i) {
-            // Calculate spacing to push labels to correct positions
-            const spacing = (i - lastLabelEnd) * 16;
-            html += `<div class="calendar-month-label" style="margin-left: ${spacing}px;">${months[monthIdx].month}</div>`;
-            lastLabelEnd = i + 3; // Approximate label width
-            monthIdx++;
-        }
+    for (const m of months) {
+        const leftPos = m.week * weekWidth;
+        html += `<div class="calendar-month-label" style="left: ${leftPos}px;">${m.month}</div>`;
     }
     html += '</div>';
 
