@@ -3275,91 +3275,1045 @@ button.copy-btn:hover { background: #38a169; }
 }
 
 /* ==========================================================================
-   Insights View - Full Page Analytics
+   Insights Command Center - Bold Data Analytics Dashboard
    ========================================================================== */
 
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
 .insights-view {
-    display: block;
+    --cmd-bg: #0a0e14;
+    --cmd-surface: #111820;
+    --cmd-surface-elevated: #1a232e;
+    --cmd-border: #2a3545;
+    --cmd-border-glow: #3d5a80;
+    --cmd-text: #e6edf3;
+    --cmd-text-muted: #8b949e;
+    --cmd-text-faint: #6e7681;
+    --cmd-accent: #58a6ff;
+    --cmd-accent-glow: rgba(88, 166, 255, 0.4);
+    --cmd-success: #3fb950;
+    --cmd-success-glow: rgba(63, 185, 80, 0.3);
+    --cmd-warning: #d29922;
+    --cmd-warning-glow: rgba(210, 153, 34, 0.3);
+    --cmd-danger: #f85149;
+    --cmd-danger-glow: rgba(248, 81, 73, 0.3);
+    --cmd-purple: #a371f7;
+    --cmd-purple-glow: rgba(163, 113, 247, 0.3);
+    --cmd-cyan: #39c5cf;
+    --cmd-cyan-glow: rgba(57, 197, 207, 0.3);
+
+    display: flex;
+    flex-direction: column;
     height: calc(100vh - 60px);
-    overflow-y: auto;
-    background: var(--bg-secondary);
+    overflow: hidden;
+    background: var(--cmd-bg);
+    color: var(--cmd-text);
+    font-family: 'Space Grotesk', -apple-system, sans-serif;
 }
 
-.insights-dashboard {
-    max-width: 1400px;
-    margin: 0 auto;
-    padding: 24px 32px 48px;
+/* Scanline overlay for retro effect */
+.insights-view::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 0, 0, 0.03) 2px,
+        rgba(0, 0, 0, 0.03) 4px
+    );
+    pointer-events: none;
+    z-index: 1000;
 }
 
-.insights-header-bar {
+/* Command Center Container */
+.insights-command-center {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 0;
+    overflow: hidden;
+}
+
+/* Header */
+.insights-header {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 24px;
-    padding-bottom: 20px;
-    border-bottom: 1px solid var(--border-color);
+    align-items: center;
+    padding: 16px 28px;
+    background: linear-gradient(180deg, var(--cmd-surface-elevated) 0%, var(--cmd-surface) 100%);
+    border-bottom: 1px solid var(--cmd-border);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+    flex-shrink: 0;
 }
 
-.insights-title-section {
+.insights-header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.insights-logo {
+    width: 44px;
+    height: 44px;
+    color: var(--cmd-accent);
+    filter: drop-shadow(0 0 8px var(--cmd-accent-glow));
+}
+
+.pulse-icon .pulse-core {
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(0.9); }
+}
+
+.insights-title-block {
     display: flex;
     flex-direction: column;
     gap: 4px;
 }
 
-.insights-main-title {
-    font-size: 24px;
+.insights-view .insights-main-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    color: var(--cmd-text);
+    margin: 0;
+    text-transform: uppercase;
+}
+
+.insights-main-title .title-accent {
+    color: var(--cmd-accent);
+    text-shadow: 0 0 20px var(--cmd-accent-glow);
+}
+
+.insights-status-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--cmd-text-muted);
+    letter-spacing: 0.08em;
+}
+
+.status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--cmd-success);
+    box-shadow: 0 0 8px var(--cmd-success-glow);
+}
+
+.status-dot.live {
+    animation: blink 1.5s ease-in-out infinite;
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+.status-separator {
+    color: var(--cmd-text-faint);
+}
+
+.insights-header-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.insights-period-selector {
+    display: flex;
+    background: var(--cmd-surface);
+    border: 1px solid var(--cmd-border);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.period-btn {
+    padding: 8px 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
     font-weight: 600;
-    color: var(--text-primary);
-    margin: 0;
-    letter-spacing: -0.02em;
+    color: var(--cmd-text-muted);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    letter-spacing: 0.05em;
 }
 
-.insights-subtitle {
-    font-size: 14px;
-    color: var(--text-muted);
-    margin: 0;
+.period-btn:hover {
+    color: var(--cmd-text);
+    background: var(--cmd-surface-elevated);
 }
 
-/* Override insights-grid for full page view */
-.insights-view .insights-grid {
+.period-btn.active {
+    color: var(--cmd-accent);
+    background: rgba(88, 166, 255, 0.1);
+    box-shadow: inset 0 -2px 0 var(--cmd-accent);
+}
+
+.refresh-insights-btn {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--cmd-surface);
+    border: 1px solid var(--cmd-border);
+    border-radius: 6px;
+    color: var(--cmd-text-muted);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.refresh-insights-btn:hover {
+    color: var(--cmd-accent);
+    border-color: var(--cmd-accent);
+    box-shadow: 0 0 12px var(--cmd-accent-glow);
+}
+
+.refresh-insights-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* Main Grid */
+.insights-main-grid {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px 28px 48px;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    grid-template-columns: repeat(12, 1fr);
+    grid-auto-rows: minmax(120px, auto);
     gap: 20px;
+    align-content: start;
 }
 
-.insights-view .insight-card {
-    padding: 20px;
-    background: var(--bg-primary);
+/* Loading state */
+.insights-loading-state {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 80px 20px;
+    color: var(--cmd-text-muted);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 0.05em;
+}
+
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 2px solid var(--cmd-border);
+    border-top-color: var(--cmd-accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ============================================
+   Insight Cards - Base Styles
+   ============================================ */
+
+.cmd-card {
+    background: var(--cmd-surface);
+    border: 1px solid var(--cmd-border);
     border-radius: 12px;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s ease;
 }
 
-.insights-view .insight-icon {
+.cmd-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, var(--card-accent, var(--cmd-accent)), transparent);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.cmd-card:hover {
+    border-color: var(--cmd-border-glow);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.cmd-card:hover::before {
+    opacity: 1;
+}
+
+.cmd-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.cmd-card-icon {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--icon-bg, rgba(88, 166, 255, 0.1));
+    border-radius: 8px;
+    color: var(--icon-color, var(--cmd-accent));
+    font-size: 16px;
+}
+
+.cmd-card-icon svg {
+    width: 18px;
+    height: 18px;
+}
+
+.cmd-card-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--cmd-text-muted);
+}
+
+/* ============================================
+   Hero Card - Efficiency Score
+   ============================================ */
+
+.cmd-card.hero-card {
+    grid-column: span 4;
+    grid-row: span 2;
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(135deg, var(--cmd-surface) 0%, var(--cmd-surface-elevated) 100%);
+    --card-accent: var(--cmd-purple);
+}
+
+.hero-score-display {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px 0;
+}
+
+.score-ring {
+    position: relative;
+    width: 160px;
+    height: 160px;
+}
+
+.score-ring svg {
+    transform: rotate(-90deg);
+    width: 100%;
+    height: 100%;
+}
+
+.score-ring-bg {
+    fill: none;
+    stroke: var(--cmd-border);
+    stroke-width: 8;
+}
+
+.score-ring-fill {
+    fill: none;
+    stroke: var(--score-color, var(--cmd-accent));
+    stroke-width: 8;
+    stroke-linecap: round;
+    stroke-dasharray: 440;
+    stroke-dashoffset: calc(440 - (440 * var(--score-pct, 0) / 100));
+    filter: drop-shadow(0 0 8px var(--score-glow, var(--cmd-accent-glow)));
+    transition: stroke-dashoffset 1s ease-out;
+}
+
+.score-center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+}
+
+.score-grade {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 56px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--score-color, var(--cmd-accent));
+    text-shadow: 0 0 30px var(--score-glow, var(--cmd-accent-glow));
+}
+
+.score-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--cmd-text-muted);
+    margin-top: 4px;
+}
+
+.hero-details {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    padding-top: 16px;
+    border-top: 1px solid var(--cmd-border);
+}
+
+.hero-detail-item {
+    text-align: center;
+    padding: 8px;
+    background: var(--cmd-bg);
+    border-radius: 6px;
+}
+
+.hero-detail-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--cmd-text);
+}
+
+.hero-detail-label {
+    font-size: 10px;
+    color: var(--cmd-text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 2px;
+}
+
+/* ============================================
+   Stats Row Cards
+   ============================================ */
+
+.cmd-card.stat-card {
+    grid-column: span 2;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    --card-accent: var(--stat-color, var(--cmd-accent));
+}
+
+.stat-card .cmd-card-icon {
+    --icon-bg: color-mix(in srgb, var(--stat-color, var(--cmd-accent)) 15%, transparent);
+    --icon-color: var(--stat-color, var(--cmd-accent));
+}
+
+.stat-main {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin-top: auto;
+}
+
+.stat-value {
+    font-family: 'JetBrains Mono', monospace;
     font-size: 32px;
+    font-weight: 700;
+    color: var(--cmd-text);
+    line-height: 1;
 }
 
-.insights-view .insight-title {
+.stat-unit {
     font-size: 14px;
+    color: var(--cmd-text-muted);
+    font-weight: 500;
+}
+
+.stat-trend {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    margin-top: 8px;
+    padding: 4px 8px;
+    background: var(--cmd-bg);
+    border-radius: 4px;
+    width: fit-content;
+}
+
+.stat-trend.positive {
+    color: var(--cmd-success);
+}
+
+.stat-trend.negative {
+    color: var(--cmd-danger);
+}
+
+.stat-trend.neutral {
+    color: var(--cmd-text-muted);
+}
+
+/* ============================================
+   Resource Usage Card
+   ============================================ */
+
+.cmd-card.resource-card {
+    grid-column: span 4;
+    grid-row: span 2;
+    --card-accent: var(--cmd-cyan);
+}
+
+.resource-meters {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    margin-top: 8px;
+}
+
+.resource-meter {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.resource-meter-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+}
+
+.resource-meter-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--cmd-text-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.resource-meter-label .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    background: var(--meter-color, var(--cmd-accent));
+}
+
+.resource-meter-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--cmd-text);
+}
+
+.resource-meter-bar {
+    height: 8px;
+    background: var(--cmd-bg);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.resource-meter-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--meter-color, var(--cmd-accent)), color-mix(in srgb, var(--meter-color, var(--cmd-accent)) 70%, white));
+    border-radius: 4px;
+    box-shadow: 0 0 12px var(--meter-glow, var(--cmd-accent-glow));
+    transition: width 1s ease-out;
+}
+
+.resource-breakdown {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--cmd-border);
+}
+
+.resource-partition-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: var(--cmd-bg);
+    border-radius: 6px;
+    font-size: 11px;
+    color: var(--cmd-text-muted);
+}
+
+.resource-partition-tag .partition-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600;
+    color: var(--cmd-text);
+}
+
+/* ============================================
+   Recommendation Cards
+   ============================================ */
+
+.cmd-card.recommendation-card {
+    grid-column: span 4;
+    --card-accent: var(--cmd-warning);
+}
+
+.recommendation-card .cmd-card-icon {
+    --icon-bg: rgba(210, 153, 34, 0.15);
+    --icon-color: var(--cmd-warning);
+}
+
+.recommendation-content {
+    margin-top: 4px;
+}
+
+.recommendation-text {
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--cmd-text);
     margin-bottom: 12px;
 }
 
-.insights-view .efficiency-grade {
-    font-size: 48px;
+.recommendation-meta {
+    font-size: 11px;
+    color: var(--cmd-text-faint);
+    font-family: 'JetBrains Mono', monospace;
 }
 
-.insights-view .efficiency-label {
-    font-size: 18px;
+/* ============================================
+   Alert/Warning Cards
+   ============================================ */
+
+.cmd-card.alert-card {
+    grid-column: span 6;
+    border-color: color-mix(in srgb, var(--cmd-danger) 30%, var(--cmd-border));
+    background: linear-gradient(135deg, var(--cmd-surface) 0%, color-mix(in srgb, var(--cmd-danger) 5%, var(--cmd-surface)) 100%);
+    --card-accent: var(--cmd-danger);
 }
 
-.insights-view .resource-value {
-    font-size: 1.5rem;
+.alert-card .cmd-card-icon {
+    --icon-bg: rgba(248, 81, 73, 0.15);
+    --icon-color: var(--cmd-danger);
 }
 
-.insights-view .stats-card-grid {
-    gap: 1.5rem;
+.alert-content {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
 }
 
-.insights-view .stats-card-value {
-    font-size: 2rem;
+.alert-message {
+    flex: 1;
+}
+
+.alert-title {
+    font-weight: 600;
+    color: var(--cmd-danger);
+    margin-bottom: 4px;
+}
+
+.alert-description {
+    font-size: 13px;
+    color: var(--cmd-text-muted);
+    line-height: 1.5;
+}
+
+.alert-stat {
+    text-align: right;
+    padding: 12px 16px;
+    background: var(--cmd-bg);
+    border-radius: 8px;
+}
+
+.alert-stat-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--cmd-danger);
+}
+
+.alert-stat-label {
+    font-size: 10px;
+    color: var(--cmd-text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+/* ============================================
+   Activity Timeline Mini Chart
+   ============================================ */
+
+.cmd-card.activity-card {
+    grid-column: span 8;
+    --card-accent: var(--cmd-success);
+}
+
+.activity-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 80px;
+    margin-top: 16px;
+    padding: 0 4px;
+}
+
+.activity-bar {
+    flex: 1;
+    min-width: 4px;
+    background: var(--cmd-accent);
+    border-radius: 2px 2px 0 0;
+    opacity: 0.7;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.activity-bar:hover {
+    opacity: 1;
+    transform: scaleY(1.05);
+    transform-origin: bottom;
+}
+
+.activity-bar.has-failures {
+    background: linear-gradient(to top, var(--cmd-danger) 0%, var(--cmd-danger) var(--fail-pct, 0%), var(--cmd-accent) var(--fail-pct, 0%), var(--cmd-accent) 100%);
+}
+
+.activity-legend {
+    display: flex;
+    gap: 16px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--cmd-border);
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--cmd-text-muted);
+}
+
+.legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+}
+
+.legend-dot.success { background: var(--cmd-accent); }
+.legend-dot.failed { background: var(--cmd-danger); }
+
+/* ============================================
+   Peak Hours Card
+   ============================================ */
+
+.cmd-card.peak-hours-card {
+    grid-column: span 4;
+    --card-accent: var(--cmd-purple);
+}
+
+.peak-hours-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 4px;
+    margin-top: 12px;
+}
+
+.peak-hour-cell {
+    aspect-ratio: 1;
+    background: var(--cell-color, var(--cmd-bg));
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--cmd-text-faint);
+    transition: transform 0.2s ease;
+    cursor: pointer;
+}
+
+.peak-hour-cell:hover {
+    transform: scale(1.1);
+    z-index: 1;
+}
+
+.peak-hour-cell.hot {
+    color: var(--cmd-bg);
+    font-weight: 600;
+}
+
+/* ============================================
+   Job Names Analysis Card
+   ============================================ */
+
+.cmd-card.job-names-card {
+    grid-column: span 4;
+    --card-accent: var(--cmd-cyan);
+}
+
+.job-names-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.job-name-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    background: var(--cmd-bg);
+    border-radius: 6px;
+}
+
+.job-name-rank {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--cmd-text-faint);
+    width: 20px;
+}
+
+.job-name-text {
+    flex: 1;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--cmd-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.job-name-count {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--cmd-cyan);
+}
+
+.job-name-bar {
+    width: 60px;
+    height: 4px;
+    background: var(--cmd-border);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.job-name-bar-fill {
+    height: 100%;
+    background: var(--cmd-cyan);
+    border-radius: 2px;
+}
+
+/* ============================================
+   Partition Efficiency Card
+   ============================================ */
+
+.cmd-card.partition-card {
+    grid-column: span 4;
+    --card-accent: var(--cmd-success);
+}
+
+.partition-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 8px;
+}
+
+.partition-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.partition-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--cmd-text);
+    width: 80px;
+}
+
+.partition-bar-container {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.partition-bar {
+    flex: 1;
+    height: 20px;
+    background: var(--cmd-bg);
+    border-radius: 4px;
+    overflow: hidden;
+    display: flex;
+}
+
+.partition-bar-success {
+    background: var(--cmd-success);
+    height: 100%;
+    transition: width 0.5s ease;
+}
+
+.partition-bar-failed {
+    background: var(--cmd-danger);
+    height: 100%;
+    transition: width 0.5s ease;
+}
+
+.partition-pct {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--cmd-text-muted);
+    width: 40px;
+    text-align: right;
+}
+
+/* ============================================
+   Empty State
+   ============================================ */
+
+.insights-empty-state {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 80px 40px;
+    text-align: center;
+}
+
+.empty-icon {
+    width: 64px;
+    height: 64px;
+    color: var(--cmd-text-faint);
+    margin-bottom: 20px;
+    opacity: 0.5;
+}
+
+.empty-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--cmd-text-muted);
+    margin-bottom: 8px;
+}
+
+.empty-description {
+    font-size: 13px;
+    color: var(--cmd-text-faint);
+    max-width: 400px;
+    line-height: 1.6;
+}
+
+/* ============================================
+   Responsive Adjustments
+   ============================================ */
+
+@media (max-width: 1400px) {
+    .cmd-card.hero-card,
+    .cmd-card.resource-card {
+        grid-column: span 6;
+    }
+
+    .cmd-card.activity-card {
+        grid-column: span 12;
+    }
+
+    .cmd-card.alert-card,
+    .cmd-card.recommendation-card,
+    .cmd-card.peak-hours-card,
+    .cmd-card.job-names-card,
+    .cmd-card.partition-card {
+        grid-column: span 6;
+    }
+}
+
+@media (max-width: 1000px) {
+    .insights-main-grid {
+        grid-template-columns: repeat(6, 1fr);
+        padding: 16px 20px 40px;
+    }
+
+    .cmd-card.hero-card,
+    .cmd-card.resource-card,
+    .cmd-card.activity-card {
+        grid-column: span 6;
+    }
+
+    .cmd-card.stat-card {
+        grid-column: span 3;
+    }
+
+    .cmd-card.alert-card,
+    .cmd-card.recommendation-card,
+    .cmd-card.peak-hours-card,
+    .cmd-card.job-names-card,
+    .cmd-card.partition-card {
+        grid-column: span 6;
+    }
+
+    .insights-header {
+        padding: 12px 20px;
+    }
+
+    .insights-view .insights-main-title {
+        font-size: 16px;
+    }
+}
+
+@media (max-width: 768px) {
+    .insights-header {
+        flex-direction: column;
+        gap: 16px;
+        align-items: flex-start;
+    }
+
+    .insights-header-right {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .insights-main-grid {
+        grid-template-columns: 1fr;
+        gap: 16px;
+    }
+
+    .cmd-card,
+    .cmd-card.hero-card,
+    .cmd-card.resource-card,
+    .cmd-card.activity-card,
+    .cmd-card.stat-card,
+    .cmd-card.alert-card,
+    .cmd-card.recommendation-card {
+        grid-column: span 1;
+        grid-row: span 1;
+    }
+
+    .hero-score-display {
+        padding: 16px 0;
+    }
+
+    .score-ring {
+        width: 120px;
+        height: 120px;
+    }
+
+    .score-grade {
+        font-size: 40px;
+    }
 }
 
 /* ==========================================================================
@@ -4938,4 +5892,471 @@ tr.batch-selected:hover {
 
 [data-theme="dark"] .widget-minimize:hover {
     background: var(--bg-tertiary);
+}
+
+/* ==========================================================================
+   Recent Jobs Table - Redesigned
+   ========================================================================== */
+
+.recent-jobs-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.recent-jobs-table thead th {
+    position: sticky;
+    top: 0;
+    background: var(--bg-secondary);
+    padding: 10px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+    z-index: 1;
+}
+
+.recent-job-row {
+    transition: background-color 0.15s ease;
+}
+
+.recent-job-row:hover {
+    background: var(--bg-hover);
+}
+
+.recent-job-row.active-log {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.recent-job-row.batch-selected {
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.recent-job-row td {
+    padding: 12px;
+    border-bottom: 1px solid var(--border-subtle);
+    vertical-align: middle;
+}
+
+/* Select column */
+.recent-job-row .select-col {
+    width: 36px;
+    text-align: center;
+    padding-left: 8px;
+    padding-right: 4px;
+}
+
+/* Updated column */
+.recent-job-row .updated-col {
+    width: 80px;
+    white-space: nowrap;
+}
+
+.time-ago {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Job name column */
+.recent-job-row .job-name-col {
+    min-width: 140px;
+    max-width: 280px;
+}
+
+.job-name-text {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-bottom: 4px;
+}
+
+.job-state-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.job-state-badge.state-completed {
+    background: color-mix(in srgb, var(--state-completed) 20%, transparent);
+    color: var(--state-completed);
+}
+
+.job-state-badge.state-running {
+    background: color-mix(in srgb, var(--state-running) 20%, transparent);
+    color: var(--state-running);
+}
+
+.job-state-badge.state-pending {
+    background: color-mix(in srgb, var(--state-pending) 20%, transparent);
+    color: var(--state-pending);
+}
+
+.job-state-badge.state-failed,
+.job-state-badge.state-timeout,
+.job-state-badge.state-cancelled,
+.job-state-badge.state-out {
+    background: color-mix(in srgb, var(--state-failed) 20%, transparent);
+    color: var(--state-failed);
+}
+
+/* Job ID column */
+.recent-job-row .job-id-col {
+    width: 110px;
+    white-space: nowrap;
+}
+
+.job-id-code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+    padding: 3px 7px;
+    border-radius: 4px;
+    margin-right: 4px;
+}
+
+.copy-id-btn {
+    background: none;
+    border: none;
+    padding: 4px;
+    cursor: pointer;
+    color: var(--text-muted);
+    border-radius: 4px;
+    transition: all 0.15s ease;
+    vertical-align: middle;
+}
+
+.copy-id-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.copy-id-btn svg {
+    width: 14px;
+    height: 14px;
+    display: block;
+}
+
+/* Logs column */
+.recent-job-row .logs-col {
+    width: 130px;
+}
+
+.log-btns {
+    display: flex;
+    gap: 6px;
+}
+
+.log-btn {
+    padding: 5px 10px;
+    font-size: 11px;
+    font-weight: 500;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.log-btn-stdout {
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    color: var(--accent);
+}
+
+.log-btn-stdout:hover {
+    background: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.log-btn-stderr {
+    background: color-mix(in srgb, var(--state-failed) 12%, transparent);
+    color: var(--state-failed);
+}
+
+.log-btn-stderr:hover {
+    background: color-mix(in srgb, var(--state-failed) 22%, transparent);
+}
+
+/* Actions column */
+.recent-job-row .actions-col {
+    width: 80px;
+    text-align: right;
+    padding-right: 16px;
+}
+
+.details-btn {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: 500;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.details-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* ==========================================================================
+   Job Details Modal
+   ========================================================================== */
+
+.job-details-modal {
+    width: 600px;
+    max-width: 95vw;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.job-details-modal .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.job-details-modal .modal-header h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.job-details-modal .modal-body {
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.job-details-loading {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-muted);
+}
+
+.job-details-error {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--state-failed);
+}
+
+.job-details-grid {
+    display: grid;
+    gap: 16px;
+}
+
+.job-detail-section {
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.job-detail-section-title,
+.job-detail-section h3 {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin: 0 0 12px 0;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.job-detail-row,
+.detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 8px 0;
+    gap: 16px;
+}
+
+.job-detail-row:not(:last-child),
+.detail-row:not(:last-child) {
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.job-detail-label,
+.detail-label {
+    font-size: 13px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.job-detail-value,
+.detail-value {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    text-align: right;
+    word-break: break-word;
+}
+
+.job-detail-value code,
+.detail-value code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: var(--bg-tertiary);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.detail-value code.exit-success {
+    color: var(--state-completed);
+}
+
+.detail-value code.exit-error {
+    color: var(--state-failed);
+}
+
+.job-detail-value .state-badge,
+.detail-value .job-state-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.job-detail-value .state-badge.state-completed,
+.detail-value .job-state-badge.state-completed {
+    background: color-mix(in srgb, var(--state-completed) 20%, transparent);
+    color: var(--state-completed);
+}
+
+.job-detail-value .state-badge.state-running,
+.detail-value .job-state-badge.state-running {
+    background: color-mix(in srgb, var(--state-running) 20%, transparent);
+    color: var(--state-running);
+}
+
+.job-detail-value .state-badge.state-pending,
+.detail-value .job-state-badge.state-pending {
+    background: color-mix(in srgb, var(--state-pending) 20%, transparent);
+    color: var(--state-pending);
+}
+
+.job-detail-value .state-badge.state-failed,
+.job-detail-value .state-badge.state-timeout,
+.job-detail-value .state-badge.state-cancelled,
+.detail-value .job-state-badge.state-failed,
+.detail-value .job-state-badge.state-timeout,
+.detail-value .job-state-badge.state-cancelled {
+    background: color-mix(in srgb, var(--state-failed) 20%, transparent);
+    color: var(--state-failed);
+}
+
+.efficiency-value {
+    font-variant-numeric: tabular-nums;
+}
+
+/* Modal close button */
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px 8px;
+    line-height: 1;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+}
+
+.modal-close:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+/* Modal overlay */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    backdrop-filter: blur(2px);
+}
+
+.modal-overlay .modal {
+    background: var(--bg-primary);
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    animation: modalSlideIn 0.2s ease;
+}
+
+@keyframes modalSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Responsive adjustments for Recent Jobs table */
+@media (max-width: 768px) {
+    .recent-jobs-table thead th {
+        padding: 8px;
+        font-size: 10px;
+    }
+
+    .recent-job-row td {
+        padding: 10px 8px;
+    }
+
+    .recent-job-row .job-name-col {
+        max-width: 150px;
+    }
+
+    .job-name-text {
+        font-size: 12px;
+    }
+
+    .log-btns {
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .log-btn {
+        padding: 4px 8px;
+        font-size: 10px;
+    }
+
+    .job-details-modal {
+        width: 100%;
+        max-width: 100%;
+        max-height: 100vh;
+        border-radius: 0;
+    }
 }

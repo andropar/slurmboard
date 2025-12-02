@@ -177,19 +177,18 @@
                 </div>
                 <div class="widget-content">
                     <div class="table-scroll">
-                        <table id="recent-table">
+                        <table id="recent-table" class="recent-jobs-table">
                             <thead>
                                 <tr>
                                     <th class="select-col"><input type="checkbox" id="select-all-recent" onchange="toggleSelectAll('recent', this.checked)" title="Select all"></th>
                                     <th class="sortable" data-sort="updated">Updated</th>
                                     <th class="job-col sortable" data-sort="name">Name</th>
-                                    <th>ID</th>
-                                    <th>Stdout</th>
-                                    <th>Stderr</th>
-                                    <th class="sortable" data-sort="size">Size</th>
+                                    <th>Job ID</th>
+                                    <th>Logs</th>
+                                    <th class="actions-col">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody id="recent-body"><tr><td colspan="8"><div class="empty-state">Loading…</div></td></tr></tbody>
+                            <tbody id="recent-body"><tr><td colspan="6"><div class="empty-state">Loading…</div></td></tr></tbody>
                         </table>
                     </div>
                 </div>
@@ -400,15 +399,45 @@
         </div>
     </div>
     <div class="insights-view" id="insights-view" style="display: none;">
-        <div class="insights-dashboard">
-            <div class="insights-header-bar">
-                <div class="insights-title-section">
-                    <h1 class="insights-main-title">Job Insights</h1>
-                    <p class="insights-subtitle">Resource usage analysis and recommendations</p>
+        <div class="insights-command-center">
+            <!-- Header with system status -->
+            <header class="insights-header">
+                <div class="insights-header-left">
+                    <div class="insights-logo">
+                        <svg viewBox="0 0 32 32" class="pulse-icon">
+                            <circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3"/>
+                            <circle cx="16" cy="16" r="10" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.5"/>
+                            <circle cx="16" cy="16" r="6" fill="currentColor" class="pulse-core"/>
+                        </svg>
+                    </div>
+                    <div class="insights-title-block">
+                        <h1 class="insights-main-title">ANALYTICS <span class="title-accent">COMMAND</span></h1>
+                        <div class="insights-status-line">
+                            <span class="status-dot live"></span>
+                            <span class="status-text">LIVE ANALYSIS</span>
+                            <span class="status-separator">|</span>
+                            <span class="status-period" id="insights-period">30 DAY WINDOW</span>
+                        </div>
+                    </div>
                 </div>
-            </div>
-            <div class="insights-grid" id="insights-content">
-                <div class="insights-loading">Analyzing job history...</div>
+                <div class="insights-header-right">
+                    <div class="insights-period-selector">
+                        <button class="period-btn" onclick="setInsightsPeriod(7)" data-days="7">7D</button>
+                        <button class="period-btn active" onclick="setInsightsPeriod(30)" data-days="30">30D</button>
+                        <button class="period-btn" onclick="setInsightsPeriod(90)" data-days="90">90D</button>
+                    </div>
+                    <button class="refresh-insights-btn" onclick="loadInsights()" title="Refresh">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Main content grid -->
+            <div class="insights-main-grid" id="insights-content">
+                <div class="insights-loading-state">
+                    <div class="loading-spinner"></div>
+                    <span>Analyzing job telemetry...</span>
+                </div>
             </div>
         </div>
     </div>
@@ -542,6 +571,19 @@ echo 'Hello from Slurm!'"></textarea>
             <div class="modal-footer">
                 <button class="btn-secondary" onclick="closeSaveTemplateModal()">Cancel</button>
                 <button class="btn-primary" onclick="confirmSaveTemplate()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Job Details Modal -->
+    <div class="modal-overlay" id="job-details-modal" style="display: none;" onclick="if(event.target === this) closeJobDetailsModal()">
+        <div class="modal job-details-modal">
+            <div class="modal-header">
+                <h2>Job Details</h2>
+                <button class="modal-close" onclick="closeJobDetailsModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="job-details-content">
+                <div class="job-details-loading">Loading job details...</div>
             </div>
         </div>
     </div>

@@ -1307,11 +1307,17 @@ def _parse_time_to_seconds(time_str: str) -> int:
 
 def _calculate_job_stats(jobs: list) -> dict:
     """Calculate basic job statistics."""
+    from collections import Counter
+
     total = len(jobs)
     completed = sum(1 for j in jobs if "COMPLETED" in j["state"].upper())
     failed = sum(1 for j in jobs if "FAILED" in j["state"].upper())
     cancelled = sum(1 for j in jobs if "CANCELLED" in j["state"].upper())
     timeout = sum(1 for j in jobs if "TIMEOUT" in j["state"].upper())
+
+    # Count job names for top jobs analysis
+    name_counts = Counter(j["name"] for j in jobs if j.get("name"))
+    top_names = [{"name": name, "count": count} for name, count in name_counts.most_common(10)]
 
     return {
         "total_jobs": total,
@@ -1320,6 +1326,7 @@ def _calculate_job_stats(jobs: list) -> dict:
         "cancelled": cancelled,
         "timeout": timeout,
         "success_rate": round((completed / total) * 100, 1) if total > 0 else 0,
+        "job_names": top_names,
     }
 
 

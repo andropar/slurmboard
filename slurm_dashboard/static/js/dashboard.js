@@ -1857,30 +1857,51 @@ function renderRunning(rows) {
 
 function renderRecent(rows) {
     if (!rows.length) {
-        recentBody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No recent logs found.</div></td></tr>';
+        recentBody.innerHTML = '<tr><td colspan="6"><div class="empty-state">No recent logs found.</div></td></tr>';
         updateBatchActionsVisibility('recent');
         return;
     }
     recentBody.innerHTML = rows.map(job => {
         const selectedCompare = selectedForCompare.has(job.log_key);
         const isSelected = selectedRecentJobs.has(job.id);
+        const stateClass = job.state ? `state-${job.state.toLowerCase().split(' ')[0]}` : '';
         return `
-        <tr class="${currentLogKey === job.log_key ? 'active-log' : ''} ${selectedCompare ? 'selected-for-compare' : ''} ${isSelected ? 'batch-selected' : ''}" data-log-key="${job.log_key}" data-job-id="${job.id}">
+        <tr class="recent-job-row ${currentLogKey === job.log_key ? 'active-log' : ''} ${selectedCompare ? 'selected-for-compare' : ''} ${isSelected ? 'batch-selected' : ''} ${stateClass}" data-log-key="${job.log_key}" data-job-id="${job.id}">
             <td class="select-col">
                 <input type="checkbox" class="batch-select" ${isSelected ? 'checked' : ''} onchange="toggleJobSelection('recent', '${job.id}', this.checked)">
             </td>
-            <td style="font-size: 12px; color: var(--text-faint);" title="${job.updated}">${relativeTime(job.updated)}</td>
-            <td class="job-cell">${job.name}</td>
-            <td>
-                <span class="expand-btn" data-job-id="${job.id}" onclick="toggleJobDetails('${job.id}')">${expandedJobs.has(job.id) ? '▾' : '▸'}</span>
-                <span class="metric">${job.id}</span>
-                <button class="copy-btn" onclick="copyToClipboard('${job.id}', this)">⎘</button>
+            <td class="updated-col">
+                <span class="time-ago">${relativeTime(job.updated)}</span>
             </td>
-            <td><button onclick="openLog('${job.log_key}','stdout')">stdout</button></td>
-            <td><button onclick="openLog('${job.log_key}','stderr')">stderr</button></td>
-            <td><span class="metric">${job.size}</span></td>
-        </tr>
-        ${expandedJobs.has(job.id) ? renderDetailsRow(job, 8) : ''}`;
+            <td class="job-name-col">
+                <span class="job-name-text">${job.name}</span>
+                ${job.state ? `<span class="job-state-badge ${stateClass}">${formatState(job.state)}</span>` : ''}
+            </td>
+            <td class="job-id-col">
+                <code class="job-id-code">${job.id}</code>
+                <button class="copy-id-btn" onclick="copyToClipboard('${job.id}', this)" title="Copy ID">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                </button>
+            </td>
+            <td class="logs-col">
+                <div class="log-btns">
+                    <button class="log-btn log-btn-stdout" onclick="openLog('${job.log_key}','stdout')">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        stdout
+                    </button>
+                    <button class="log-btn log-btn-stderr" onclick="openLog('${job.log_key}','stderr')">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        stderr
+                    </button>
+                </div>
+            </td>
+            <td class="actions-col">
+                <button class="details-btn" onclick="openJobDetailsModal('${job.id}')" title="View details">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                    Details
+                </button>
+            </td>
+        </tr>`;
     }).join('');
     updateBatchActionsVisibility('recent');
 }
@@ -2837,18 +2858,28 @@ function hideDagTooltip() {
     if (tooltip) tooltip.remove();
 }
 
-// Insights Panel Functions
+// Insights Command Center Functions
 let costData = null;
+let insightsPeriod = 30;
 
 async function loadInsights() {
     const content = document.getElementById('insights-content');
     if (!content) return;
 
+    // Show loading state
+    content.innerHTML = `
+        <div class="insights-loading-state">
+            <div class="loading-spinner"></div>
+            <span>Analyzing job telemetry...</span>
+        </div>
+    `;
+
     try {
-        // Load both insights and cost data in parallel
-        const [insightsRes, costRes] = await Promise.all([
-            fetch('/api/insights?days=30'),
-            fetch('/api/cost?days=30')
+        // Load insights, cost, and heatmap data in parallel for more analytics
+        const [insightsRes, costRes, heatmapRes] = await Promise.all([
+            fetch(`/api/insights?days=${insightsPeriod}`),
+            fetch(`/api/cost?days=${insightsPeriod}`),
+            fetch(`/api/heatmap?days=${insightsPeriod}`)
         ]);
 
         if (insightsRes.ok) {
@@ -2857,160 +2888,263 @@ async function loadInsights() {
         if (costRes.ok) {
             costData = await costRes.json();
         }
+        if (heatmapRes.ok) {
+            insightsData.heatmapData = await heatmapRes.json();
+        }
 
         renderInsights();
     } catch (err) {
         console.error('Insights load error:', err);
-        content.innerHTML = '<div class="insights-error">Could not load insights</div>';
+        content.innerHTML = `
+            <div class="insights-empty-state">
+                <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                <div class="empty-title">CONNECTION ERROR</div>
+                <div class="empty-description">Could not load analytics data. Check your connection and try again.</div>
+            </div>
+        `;
     }
+}
+
+function setInsightsPeriod(days) {
+    insightsPeriod = days;
+    // Update button states
+    document.querySelectorAll('.period-btn').forEach(btn => {
+        btn.classList.toggle('active', parseInt(btn.dataset.days) === days);
+    });
+    // Update header text
+    const periodText = document.getElementById('insights-period');
+    if (periodText) {
+        periodText.textContent = `${days} DAY WINDOW`;
+    }
+    loadInsights();
 }
 
 function renderInsights() {
     const content = document.getElementById('insights-content');
-
     if (!content || !insightsData) return;
 
     // Check if we have any data
     if (!insightsData.job_stats || insightsData.job_stats.total_jobs === 0) {
-        content.innerHTML = '<div class="insights-empty">No job history found for analysis</div>';
+        content.innerHTML = `
+            <div class="insights-empty-state">
+                <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                </svg>
+                <div class="empty-title">NO DATA FOUND</div>
+                <div class="empty-description">No job history found for analysis. Submit some jobs to start seeing insights and recommendations.</div>
+            </div>
+        `;
         return;
     }
 
+    const stats = insightsData.job_stats;
+    const eff = insightsData.efficiency_score || {};
     let html = '';
 
-    // Efficiency Score Card
-    if (insightsData.efficiency_score) {
-        const eff = insightsData.efficiency_score;
-        const gradeClass = eff.grade === 'A' ? 'grade-a' : eff.grade === 'B' ? 'grade-b' : eff.grade === 'C' ? 'grade-c' : 'grade-d';
+    // ===== ROW 1: Hero Efficiency Card + Stat Cards =====
 
-        // Build explanation based on efficiency metrics
-        let explanation = '';
-        const memEff = eff.memory_efficiency || 0;
-        const timeEff = eff.time_efficiency || 0;
+    // Efficiency Score Hero Card
+    const gradeColors = {
+        'A': { color: '#3fb950', glow: 'rgba(63, 185, 80, 0.4)', pct: 95 },
+        'B': { color: '#58a6ff', glow: 'rgba(88, 166, 255, 0.4)', pct: 75 },
+        'C': { color: '#d29922', glow: 'rgba(210, 153, 34, 0.4)', pct: 55 },
+        'D': { color: '#f85149', glow: 'rgba(248, 81, 73, 0.4)', pct: 30 },
+        'F': { color: '#f85149', glow: 'rgba(248, 81, 73, 0.4)', pct: 15 }
+    };
+    const grade = eff.grade || 'C';
+    const gradeStyle = gradeColors[grade] || gradeColors['C'];
 
-        if (eff.grade === 'A') {
-            explanation = 'Great resource utilization';
-        } else if (eff.grade === 'B') {
-            explanation = 'Good efficiency, minor optimization possible';
-        } else if (eff.grade === 'C') {
-            if (memEff < 50) explanation = 'Consider requesting less memory';
-            else if (timeEff < 50) explanation = 'Jobs finishing much faster than time limit';
-            else explanation = 'Some resource optimization recommended';
-        } else {
-            if (memEff < 30) explanation = 'Jobs using <30% of requested memory';
-            else if (timeEff < 30) explanation = 'Jobs using <30% of time limit';
-            else explanation = 'Significant resource overallocation detected';
-        }
-
-        html += `
-            <div class="insight-card efficiency-card">
-                <div class="insight-icon">📊</div>
-                <div class="insight-content">
-                    <div class="insight-title">Efficiency Score</div>
-                    <div class="efficiency-score ${gradeClass}">
-                        <span class="efficiency-grade">${eff.grade}</span>
-                        <span class="efficiency-label">${eff.label}</span>
-                    </div>
-                    <div class="efficiency-explanation">${explanation}</div>
-                    <div class="efficiency-details">
-                        ${eff.memory_efficiency ? `<span title="Actual memory used vs requested">Memory: ${eff.memory_efficiency}%</span>` : ''}
-                        ${eff.time_efficiency ? `<span title="Actual runtime vs time limit">Time: ${eff.time_efficiency}%</span>` : ''}
+    html += `
+        <div class="cmd-card hero-card" style="--score-color: ${gradeStyle.color}; --score-glow: ${gradeStyle.glow}; --score-pct: ${gradeStyle.pct}">
+            <div class="cmd-card-header">
+                <div class="cmd-card-icon" style="--icon-bg: rgba(163, 113, 247, 0.15); --icon-color: #a371f7">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
+                </div>
+                <span class="cmd-card-title">Efficiency Score</span>
+            </div>
+            <div class="hero-score-display">
+                <div class="score-ring">
+                    <svg viewBox="0 0 160 160">
+                        <circle class="score-ring-bg" cx="80" cy="80" r="70"/>
+                        <circle class="score-ring-fill" cx="80" cy="80" r="70"/>
+                    </svg>
+                    <div class="score-center">
+                        <div class="score-grade">${grade}</div>
+                        <div class="score-label">${eff.label || 'Analyzing...'}</div>
                     </div>
                 </div>
             </div>
-        `;
-    }
-
-    // Job Stats Card
-    if (insightsData.job_stats) {
-        const stats = insightsData.job_stats;
-        html += `
-            <div class="insight-card stats-card">
-                <div class="insight-icon">📈</div>
-                <div class="insight-content">
-                    <div class="insight-title">Last 30 Days</div>
-                    <div class="stats-grid">
-                        <div class="stat-item">
-                            <span class="stat-value">${stats.total_jobs}</span>
-                            <span class="stat-label">Total Jobs</span>
-                        </div>
-                        <div class="stat-item success">
-                            <span class="stat-value">${stats.success_rate}%</span>
-                            <span class="stat-label">Success Rate</span>
-                        </div>
-                        <div class="stat-item ${stats.failed > 0 ? 'warning' : ''}">
-                            <span class="stat-value">${stats.failed}</span>
-                            <span class="stat-label">Failed</span>
-                        </div>
-                        <div class="stat-item ${stats.timeout > 0 ? 'warning' : ''}">
-                            <span class="stat-value">${stats.timeout}</span>
-                            <span class="stat-label">Timeout</span>
-                        </div>
-                    </div>
+            <div class="hero-details">
+                <div class="hero-detail-item">
+                    <div class="hero-detail-value">${eff.memory_efficiency || '—'}%</div>
+                    <div class="hero-detail-label">Memory Eff.</div>
+                </div>
+                <div class="hero-detail-item">
+                    <div class="hero-detail-value">${eff.time_efficiency || '—'}%</div>
+                    <div class="hero-detail-label">Time Eff.</div>
                 </div>
             </div>
-        `;
-    }
+        </div>
+    `;
 
-    // Resource Hours Card
-    if (costData && (costData.total_cpu_hours !== undefined || costData.total_gpu_hours !== undefined)) {
+    // Stat Cards Row
+    html += `
+        <div class="cmd-card stat-card" style="--stat-color: #58a6ff">
+            <div class="cmd-card-header">
+                <div class="cmd-card-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                </div>
+                <span class="cmd-card-title">Total Jobs</span>
+            </div>
+            <div class="stat-main">
+                <span class="stat-value">${stats.total_jobs.toLocaleString()}</span>
+            </div>
+            <div class="stat-trend neutral">
+                <span>${insightsPeriod} day period</span>
+            </div>
+        </div>
+
+        <div class="cmd-card stat-card" style="--stat-color: #3fb950">
+            <div class="cmd-card-header">
+                <div class="cmd-card-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                </div>
+                <span class="cmd-card-title">Success Rate</span>
+            </div>
+            <div class="stat-main">
+                <span class="stat-value">${stats.success_rate}</span>
+                <span class="stat-unit">%</span>
+            </div>
+            <div class="stat-trend ${stats.success_rate >= 80 ? 'positive' : stats.success_rate >= 50 ? 'neutral' : 'negative'}">
+                ${stats.success_rate >= 80 ? '↑ Healthy' : stats.success_rate >= 50 ? '→ Moderate' : '↓ Needs attention'}
+            </div>
+        </div>
+
+        <div class="cmd-card stat-card" style="--stat-color: #f85149">
+            <div class="cmd-card-header">
+                <div class="cmd-card-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                </div>
+                <span class="cmd-card-title">Failed</span>
+            </div>
+            <div class="stat-main">
+                <span class="stat-value">${stats.failed}</span>
+                <span class="stat-unit">jobs</span>
+            </div>
+            ${stats.failed > 0 ? `<div class="stat-trend negative">${Math.round((stats.failed / stats.total_jobs) * 100)}% failure rate</div>` : '<div class="stat-trend positive">No failures!</div>'}
+        </div>
+
+        <div class="cmd-card stat-card" style="--stat-color: #d29922">
+            <div class="cmd-card-header">
+                <div class="cmd-card-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                </div>
+                <span class="cmd-card-title">Timeouts</span>
+            </div>
+            <div class="stat-main">
+                <span class="stat-value">${stats.timeout}</span>
+                <span class="stat-unit">jobs</span>
+            </div>
+            ${stats.timeout > 0 ? `<div class="stat-trend negative">Consider longer limits</div>` : '<div class="stat-trend positive">None exceeded</div>'}
+        </div>
+    `;
+
+    // ===== ROW 2: Resource Usage Card + Activity Chart =====
+
+    // Resource Usage Card
+    if (costData) {
         const cpuHours = costData.total_cpu_hours || 0;
         const gpuHours = costData.total_gpu_hours || 0;
+        const maxHours = Math.max(cpuHours, gpuHours, 1);
+
         html += `
-            <div class="insight-card resource-card">
-                <div class="insight-icon">⏱️</div>
-                <div class="insight-content">
-                    <div class="insight-title">Resource Hours (30 days)</div>
-                    <div class="resource-grid">
-                        <div class="resource-item">
-                            <span class="resource-value">${formatHours(cpuHours)}</span>
-                            <span class="resource-label">CPU Hours</span>
-                        </div>
-                        ${gpuHours > 0 ? `
-                        <div class="resource-item">
-                            <span class="resource-value">${formatHours(gpuHours)}</span>
-                            <span class="resource-label">GPU Hours</span>
-                        </div>
-                        ` : ''}
+            <div class="cmd-card resource-card">
+                <div class="cmd-card-header">
+                    <div class="cmd-card-icon" style="--icon-bg: rgba(57, 197, 207, 0.15); --icon-color: #39c5cf">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
                     </div>
-                    ${costData.by_partition && costData.by_partition.length > 0 ? `
-                        <div class="resource-breakdown">
-                            ${costData.by_partition.slice(0, 3).map(item => {
-                                const parts = [];
-                                if (item.cpu_hours > 0) parts.push(`${formatHours(item.cpu_hours)} CPU`);
-                                if (item.gpu_hours > 0) parts.push(`${formatHours(item.gpu_hours)} GPU`);
-                                return `<span class="resource-partition"><span class="partition-name">${item.partition}</span>: ${parts.join(', ')}</span>`;
-                            }).join('')}
+                    <span class="cmd-card-title">Resource Consumption</span>
+                </div>
+                <div class="resource-meters">
+                    <div class="resource-meter" style="--meter-color: #58a6ff; --meter-glow: rgba(88, 166, 255, 0.4)">
+                        <div class="resource-meter-header">
+                            <span class="resource-meter-label"><span class="dot"></span>CPU Hours</span>
+                            <span class="resource-meter-value">${formatHours(cpuHours)}</span>
                         </div>
+                        <div class="resource-meter-bar">
+                            <div class="resource-meter-fill" style="width: ${(cpuHours / maxHours) * 100}%"></div>
+                        </div>
+                    </div>
+                    ${gpuHours > 0 ? `
+                    <div class="resource-meter" style="--meter-color: #a371f7; --meter-glow: rgba(163, 113, 247, 0.4)">
+                        <div class="resource-meter-header">
+                            <span class="resource-meter-label"><span class="dot"></span>GPU Hours</span>
+                            <span class="resource-meter-value">${formatHours(gpuHours)}</span>
+                        </div>
+                        <div class="resource-meter-bar">
+                            <div class="resource-meter-fill" style="width: ${(gpuHours / maxHours) * 100}%"></div>
+                        </div>
+                    </div>
                     ` : ''}
                 </div>
+                ${costData.by_partition && costData.by_partition.length > 0 ? `
+                    <div class="resource-breakdown">
+                        ${costData.by_partition.slice(0, 4).map(item => {
+                            const parts = [];
+                            if (item.cpu_hours > 0) parts.push(`${formatHours(item.cpu_hours)} CPU`);
+                            if (item.gpu_hours > 0) parts.push(`${formatHours(item.gpu_hours)} GPU`);
+                            return `<span class="resource-partition-tag"><span class="partition-name">${item.partition}</span>${parts.join(', ')}</span>`;
+                        }).join('')}
+                    </div>
+                ` : ''}
             </div>
         `;
     }
 
-    // Memory Recommendation Card
-    if (insightsData.memory_insights && insightsData.memory_insights.recommendation) {
-        const mem = insightsData.memory_insights;
+    // Activity Chart (using heatmap daily data)
+    if (insightsData.heatmapData && insightsData.heatmapData.daily) {
+        const daily = insightsData.heatmapData.daily.slice(-30); // Last 30 days
+        const maxDaily = Math.max(...daily.map(d => d.total), 1);
+
         html += `
-            <div class="insight-card recommendation-card">
-                <div class="insight-icon">💾</div>
-                <div class="insight-content">
-                    <div class="insight-title">Memory Recommendation</div>
-                    <div class="recommendation-text">${mem.recommendation}</div>
-                    <div class="recommendation-meta">Based on ${mem.sample_count} completed jobs</div>
+            <div class="cmd-card activity-card">
+                <div class="cmd-card-header">
+                    <div class="cmd-card-icon" style="--icon-bg: rgba(63, 185, 80, 0.15); --icon-color: #3fb950">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                    </div>
+                    <span class="cmd-card-title">Daily Activity</span>
+                </div>
+                <div class="activity-chart">
+                    ${daily.map(day => {
+                        const height = Math.max((day.total / maxDaily) * 100, 4);
+                        const failPct = day.total > 0 ? ((day.failed || 0) / day.total) * 100 : 0;
+                        return `<div class="activity-bar ${failPct > 0 ? 'has-failures' : ''}" style="height: ${height}%; --fail-pct: ${failPct}%" title="${day.date}: ${day.total} jobs${day.failed ? `, ${day.failed} failed` : ''}"></div>`;
+                    }).join('')}
+                </div>
+                <div class="activity-legend">
+                    <div class="legend-item"><span class="legend-dot success"></span>Successful</div>
+                    <div class="legend-item"><span class="legend-dot failed"></span>Failed</div>
                 </div>
             </div>
         `;
     }
 
-    // Time Recommendation Card
+    // ===== ROW 3: Recommendations and Alerts =====
+
+    // Time Recommendation
     if (insightsData.time_insights && insightsData.time_insights.recommendation) {
         const time = insightsData.time_insights;
         html += `
-            <div class="insight-card recommendation-card">
-                <div class="insight-icon">⏱️</div>
-                <div class="insight-content">
-                    <div class="insight-title">Time Limit Recommendation</div>
+            <div class="cmd-card recommendation-card">
+                <div class="cmd-card-header">
+                    <div class="cmd-card-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    </div>
+                    <span class="cmd-card-title">Time Optimization</span>
+                </div>
+                <div class="recommendation-content">
                     <div class="recommendation-text">${time.recommendation}</div>
                     <div class="recommendation-meta">Based on ${time.sample_count} completed jobs</div>
                 </div>
@@ -3018,24 +3152,144 @@ function renderInsights() {
         `;
     }
 
-    // Failure Patterns
+    // Memory Recommendation
+    if (insightsData.memory_insights && insightsData.memory_insights.recommendation) {
+        const mem = insightsData.memory_insights;
+        html += `
+            <div class="cmd-card recommendation-card">
+                <div class="cmd-card-header">
+                    <div class="cmd-card-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>
+                    </div>
+                    <span class="cmd-card-title">Memory Optimization</span>
+                </div>
+                <div class="recommendation-content">
+                    <div class="recommendation-text">${mem.recommendation}</div>
+                    <div class="recommendation-meta">Based on ${mem.sample_count} completed jobs</div>
+                </div>
+            </div>
+        `;
+    }
+
+    // Peak Hours Card (using hourly heatmap data)
+    if (insightsData.heatmapData && insightsData.heatmapData.hourly) {
+        const hourly = insightsData.heatmapData.hourly;
+        const maxHourly = Math.max(...hourly.map(h => h.count), 1);
+
+        // Create 24 hour cells grouped by 4
+        const hourCells = [];
+        for (let h = 0; h < 24; h++) {
+            const hourData = hourly.find(d => d.hour === h) || { count: 0 };
+            const intensity = hourData.count / maxHourly;
+            const color = intensity > 0.7 ? '#a371f7' : intensity > 0.4 ? '#58a6ff' : intensity > 0.1 ? '#2a3545' : '#111820';
+            const isHot = intensity > 0.5;
+            hourCells.push(`<div class="peak-hour-cell ${isHot ? 'hot' : ''}" style="--cell-color: ${color}" title="${h}:00 - ${hourData.count} jobs">${h}</div>`);
+        }
+
+        html += `
+            <div class="cmd-card peak-hours-card">
+                <div class="cmd-card-header">
+                    <div class="cmd-card-icon" style="--icon-bg: rgba(163, 113, 247, 0.15); --icon-color: #a371f7">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                    </div>
+                    <span class="cmd-card-title">Peak Hours</span>
+                </div>
+                <div class="peak-hours-grid">
+                    ${hourCells.join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    // Job Names Analysis (top job names by frequency)
+    if (insightsData.job_stats.job_names && insightsData.job_stats.job_names.length > 0) {
+        const topNames = insightsData.job_stats.job_names.slice(0, 5);
+        const maxCount = topNames[0].count;
+
+        html += `
+            <div class="cmd-card job-names-card">
+                <div class="cmd-card-header">
+                    <div class="cmd-card-icon" style="--icon-bg: rgba(57, 197, 207, 0.15); --icon-color: #39c5cf">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                    </div>
+                    <span class="cmd-card-title">Top Job Types</span>
+                </div>
+                <div class="job-names-list">
+                    ${topNames.map((job, i) => `
+                        <div class="job-name-row">
+                            <span class="job-name-rank">#${i + 1}</span>
+                            <span class="job-name-text" title="${job.name}">${job.name}</span>
+                            <span class="job-name-count">${job.count}</span>
+                            <div class="job-name-bar">
+                                <div class="job-name-bar-fill" style="width: ${(job.count / maxCount) * 100}%"></div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    // Partition Success Rates
+    if (costData && costData.by_partition && costData.by_partition.length > 0) {
+        // Calculate partition success rates from failure patterns if available
+        const partitionData = costData.by_partition.slice(0, 4).map(p => {
+            const pattern = insightsData.failure_patterns?.find(f => f.partition === p.partition);
+            const failRate = pattern ? pattern.failure_rate : 0;
+            return { ...p, success_rate: 100 - failRate };
+        });
+
+        html += `
+            <div class="cmd-card partition-card">
+                <div class="cmd-card-header">
+                    <div class="cmd-card-icon" style="--icon-bg: rgba(63, 185, 80, 0.15); --icon-color: #3fb950">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+                    </div>
+                    <span class="cmd-card-title">Partition Health</span>
+                </div>
+                <div class="partition-list">
+                    ${partitionData.map(p => `
+                        <div class="partition-row">
+                            <span class="partition-name">${p.partition}</span>
+                            <div class="partition-bar-container">
+                                <div class="partition-bar">
+                                    <div class="partition-bar-success" style="width: ${p.success_rate}%"></div>
+                                    <div class="partition-bar-failed" style="width: ${100 - p.success_rate}%"></div>
+                                </div>
+                                <span class="partition-pct">${Math.round(p.success_rate)}%</span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    // Failure Pattern Alerts
     if (insightsData.failure_patterns && insightsData.failure_patterns.length > 0) {
         for (const pattern of insightsData.failure_patterns.slice(0, 2)) {
+            const failRate = pattern.failure_rate || Math.round((pattern.failed / pattern.total) * 100);
             html += `
-                <div class="insight-card warning-card">
-                    <div class="insight-icon">⚠️</div>
-                    <div class="insight-content">
-                        <div class="insight-title">Failure Pattern Detected</div>
-                        <div class="warning-text">${pattern.message}</div>
+                <div class="cmd-card alert-card">
+                    <div class="cmd-card-header">
+                        <div class="cmd-card-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                        </div>
+                        <span class="cmd-card-title">Failure Alert</span>
+                    </div>
+                    <div class="alert-content">
+                        <div class="alert-message">
+                            <div class="alert-title">${pattern.type === 'partition' ? `Partition: ${pattern.partition}` : 'Pattern Detected'}</div>
+                            <div class="alert-description">${pattern.message}</div>
+                        </div>
+                        <div class="alert-stat">
+                            <div class="alert-stat-value">${failRate}%</div>
+                            <div class="alert-stat-label">Fail Rate</div>
+                        </div>
                     </div>
                 </div>
             `;
         }
-    }
-
-    // If no insights to show
-    if (html === '') {
-        html = '<div class="insights-empty">No recommendations at this time. Keep submitting jobs to get personalized insights!</div>';
     }
 
     content.innerHTML = html;
@@ -3419,6 +3673,119 @@ function openSubmitModal() {
 
 function closeSubmitModal() {
     document.getElementById('submit-modal').style.display = 'none';
+}
+
+// Job Details Modal
+async function openJobDetailsModal(jobId) {
+    const modal = document.getElementById('job-details-modal');
+    const content = document.getElementById('job-details-content');
+    modal.style.display = 'flex';
+    content.innerHTML = '<div class="job-details-loading">Loading job details...</div>';
+
+    try {
+        const res = await fetch(`/api/job_details/${jobId}`);
+        const details = res.ok ? await res.json() : {};
+
+        // Find the job in our cached data
+        const job = allRecentJobs.find(j => j.id === jobId) || allRunningJobs.find(j => j.id === jobId) || {};
+
+        content.innerHTML = `
+            <div class="job-details-grid">
+                <div class="job-detail-section">
+                    <h3>Basic Info</h3>
+                    <div class="detail-row">
+                        <span class="detail-label">Job ID</span>
+                        <span class="detail-value"><code>${jobId}</code></span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Name</span>
+                        <span class="detail-value">${job.name || 'N/A'}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">State</span>
+                        <span class="detail-value">
+                            ${details.state || job.state ? `<span class="job-state-badge state-${(details.state || job.state || '').toLowerCase().split(' ')[0]}">${formatState(details.state || job.state)}</span>` : 'N/A'}
+                        </span>
+                    </div>
+                    ${details.exit_code ? `
+                    <div class="detail-row">
+                        <span class="detail-label">Exit Code</span>
+                        <span class="detail-value"><code class="${details.exit_code === '0' ? 'exit-success' : 'exit-error'}">${details.exit_code}</code></span>
+                    </div>` : ''}
+                    ${job.partition ? `
+                    <div class="detail-row">
+                        <span class="detail-label">Partition</span>
+                        <span class="detail-value">${job.partition}</span>
+                    </div>` : ''}
+                </div>
+
+                <div class="job-detail-section">
+                    <h3>Timing</h3>
+                    ${job.updated ? `
+                    <div class="detail-row">
+                        <span class="detail-label">Last Updated</span>
+                        <span class="detail-value">${new Date(job.updated).toLocaleString()}</span>
+                    </div>` : ''}
+                    ${job.elapsed || job.runtime ? `
+                    <div class="detail-row">
+                        <span class="detail-label">Runtime</span>
+                        <span class="detail-value"><code>${job.elapsed || job.runtime}</code></span>
+                    </div>` : ''}
+                    ${details.end_time && details.end_time !== 'N/A' ? `
+                    <div class="detail-row">
+                        <span class="detail-label">End Time</span>
+                        <span class="detail-value">${details.end_time}</span>
+                    </div>` : ''}
+                </div>
+
+                ${details.cpu_eff || details.mem_eff ? `
+                <div class="job-detail-section">
+                    <h3>Efficiency</h3>
+                    ${details.cpu_eff ? `
+                    <div class="detail-row">
+                        <span class="detail-label">CPU Efficiency</span>
+                        <span class="detail-value efficiency-value">${details.cpu_eff}</span>
+                    </div>` : ''}
+                    ${details.mem_eff ? `
+                    <div class="detail-row">
+                        <span class="detail-label">Memory Efficiency</span>
+                        <span class="detail-value efficiency-value">${details.mem_eff}</span>
+                    </div>` : ''}
+                </div>` : ''}
+
+                ${job.gres ? `
+                <div class="job-detail-section">
+                    <h3>Resources</h3>
+                    <div class="detail-row">
+                        <span class="detail-label">GRES/TRES</span>
+                        <span class="detail-value"><code>${job.gres}</code></span>
+                    </div>
+                </div>` : ''}
+            </div>
+
+            <div class="job-details-actions">
+                <button class="btn-secondary" onclick="openLog('${job.log_key}','stdout'); closeJobDetailsModal();">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    View stdout
+                </button>
+                <button class="btn-secondary" onclick="openLog('${job.log_key}','stderr'); closeJobDetailsModal();">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    View stderr
+                </button>
+                <button class="btn-secondary" onclick="copyToClipboard('${jobId}', this)">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    Copy ID
+                </button>
+            </div>
+        `;
+    } catch (err) {
+        console.error('Error loading job details:', err);
+        content.innerHTML = '<div class="job-details-error">Failed to load job details</div>';
+    }
+}
+
+function closeJobDetailsModal() {
+    document.getElementById('job-details-modal').style.display = 'none';
 }
 
 function switchSubmitTab(tab) {
