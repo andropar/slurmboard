@@ -2,7 +2,13 @@
 
 A lightweight, real-time web dashboard for monitoring Slurm HPC cluster jobs. View logs, track resource usage, analyze job patterns, and manage your workloads from a clean, modern interface.
 
-![Dashboard Overview](docs/images/dashboard-main.png)
+![Dashboard Overview](https://raw.githubusercontent.com/andropar/slurmboard/main/docs/images/dashboard-main.png)
+
+## Installation
+
+```bash
+pip install slurm-dashboard
+```
 
 ## Features
 
@@ -22,13 +28,15 @@ A lightweight, real-time web dashboard for monitoring Slurm HPC cluster jobs. Vi
 <td width="50%">
 
 **Job List & Logs**
-![Job List](docs/images/jobs-logs.png)
+
+<img src="https://raw.githubusercontent.com/andropar/slurmboard/main/docs/images/jobs-logs.png" alt="Job List" width="100%">
 
 </td>
 <td width="50%">
 
 **Insights Dashboard**
-![Insights](docs/images/insights.png)
+
+<img src="https://raw.githubusercontent.com/andropar/slurmboard/main/docs/images/insights.png" alt="Insights" width="100%">
 
 </td>
 </tr>
@@ -36,7 +44,8 @@ A lightweight, real-time web dashboard for monitoring Slurm HPC cluster jobs. Vi
 <td width="50%">
 
 **Heatmap View**
-![Heatmap](docs/images/heatmap.png)
+
+<img src="https://raw.githubusercontent.com/andropar/slurmboard/main/docs/images/heatmap.png" alt="Heatmap" width="100%">
 
 </td>
 <td width="50%">
@@ -44,18 +53,6 @@ A lightweight, real-time web dashboard for monitoring Slurm HPC cluster jobs. Vi
 </td>
 </tr>
 </table>
-
-## Installation
-
-```bash
-pip install -e .
-```
-
-### Requirements
-
-- Python 3.8+
-- Access to Slurm commands (`squeue`, `sacct`, `scancel`, `sbatch`)
-- A web browser
 
 ## Quick Start
 
