@@ -1601,21 +1601,28 @@ function matchesQuickFilter(job, filter) {
 
     switch (filter) {
         case 'failed':
+            // If job has no state (log-only), don't filter it out
+            if (!job.state) return false;
             return state.includes('failed') || state.includes('cancelled') || state.includes('timeout');
         case 'today':
             const updated = job.updated || job.start_time;
-            if (!updated) return false;
+            if (!updated) return true; // Include jobs without date info
             const jobDate = new Date(updated);
             return jobDate >= today;
         case 'gpu':
-            // Check if job uses GPUs (based on partition name or GRES)
+            // Check if job uses GPUs (based on partition name, GRES, or job name)
             const partition = (job.partition || '').toLowerCase();
-            return partition.includes('gpu') || (job.gres && job.gres.includes('gpu'));
+            const name = (job.name || '').toLowerCase();
+            return partition.includes('gpu') ||
+                   (job.gres && job.gres.includes('gpu')) ||
+                   name.includes('gpu');
         case 'long':
-            // Jobs running > 1 hour
-            const runtime = parseRuntimeToMinutes(job.runtime || '0:00:00');
+            // Jobs running > 1 hour; if no runtime info, don't filter out
+            if (!job.runtime) return false;
+            const runtime = parseRuntimeToMinutes(job.runtime);
             return runtime >= 60;
         case 'pending':
+            if (!job.state) return false;
             return state.includes('pending') || state.includes('configuring');
         default:
             return true;
@@ -2437,6 +2444,11 @@ function renderTimelineGroup(group, startTime, endTime, visibleRangeMs) {
 }
 
 function handleTimelineWheel(e) {
+    // Only zoom if Ctrl/Cmd key is held, otherwise allow normal scrolling
+    if (!e.ctrlKey && !e.metaKey) {
+        return; // Let the browser handle normal scrolling
+    }
+
     e.preventDefault();
     const delta = e.deltaY > 0 ? -1 : 1;
 

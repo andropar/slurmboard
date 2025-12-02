@@ -479,9 +479,17 @@ button.copy-btn:hover { background: #38a169; }
 .status-timeout { background: var(--status-timeout-bg); color: var(--status-timeout-text); }
 
 #log-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+}
+
+#log-content {
     background: var(--log-bg);
     color: var(--log-text);
     padding: 16px;
+    margin: 0;
     border-radius: 8px;
     flex: 1;
     min-height: 0;
@@ -493,10 +501,10 @@ button.copy-btn:hover { background: #38a169; }
     box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
 }
 
-#log-panel::-webkit-scrollbar { width: 8px; }
-#log-panel::-webkit-scrollbar-track { background: var(--log-scrollbar-track); }
-#log-panel::-webkit-scrollbar-thumb { background: var(--log-scrollbar-thumb); border-radius: 4px; }
-#log-panel::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+#log-content::-webkit-scrollbar { width: 8px; }
+#log-content::-webkit-scrollbar-track { background: var(--log-scrollbar-track); }
+#log-content::-webkit-scrollbar-thumb { background: var(--log-scrollbar-thumb); border-radius: 4px; }
+#log-content::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
 
 #log-wrapper {
     display: flex;
@@ -659,14 +667,14 @@ button.copy-btn:hover { background: #38a169; }
 }
 
 /* Highlight in log panel */
-#log-panel mark {
+#log-content mark {
     background: var(--highlight-bg);
     color: var(--highlight-text);
     padding: 0 2px;
     border-radius: 2px;
 }
 
-#log-panel mark.current {
+#log-content mark.current {
     background: var(--highlight-current-bg);
     color: var(--highlight-current-text);
 }
@@ -711,6 +719,14 @@ button.copy-btn:hover { background: #38a169; }
 .running-table-scroll::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
 
 .recent-wrapper {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.recent-wrapper .widget-content {
     flex: 1;
     min-height: 0;
     display: flex;
@@ -1054,13 +1070,13 @@ button.copy-btn:hover { background: #38a169; }
 }
 
 /* Log line styles for annotations */
-#log-panel .log-line {
+#log-content .log-line {
     display: flex;
     align-items: flex-start;
     min-height: 1.5em;
 }
 
-#log-panel .line-number {
+#log-content .line-number {
     display: inline-block;
     min-width: 50px;
     padding-right: 12px;
@@ -1072,12 +1088,12 @@ button.copy-btn:hover { background: #38a169; }
     flex-shrink: 0;
 }
 
-#log-panel .line-number:hover {
+#log-content .line-number:hover {
     opacity: 1;
     color: var(--accent);
 }
 
-#log-panel .annotation-marker {
+#log-content .annotation-marker {
     display: inline-block;
     width: 16px;
     color: #f59e0b;
@@ -1086,28 +1102,28 @@ button.copy-btn:hover { background: #38a169; }
     text-align: center;
 }
 
-#log-panel .annotation-marker:hover {
+#log-content .annotation-marker:hover {
     color: #d97706;
 }
 
-#log-panel .line-content {
+#log-content .line-content {
     flex: 1;
     white-space: pre-wrap;
     word-wrap: break-word;
 }
 
-#log-panel .log-line.annotated {
+#log-content .log-line.annotated {
     background: rgba(245, 158, 11, 0.08);
     margin: 0 -16px;
     padding: 0 16px;
 }
 
-#log-panel .log-line.annotated .line-number {
+#log-content .log-line.annotated .line-number {
     opacity: 1;
     color: #f59e0b;
 }
 
-#log-panel .log-line.highlight-flash {
+#log-content .log-line.highlight-flash {
     animation: annotation-flash 1s ease-out;
 }
 
