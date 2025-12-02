@@ -3,8 +3,51 @@ from __future__ import annotations
 
 import re
 import subprocess
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional
+
+
+@lru_cache(maxsize=1)
+def get_gres_field_name() -> str:
+    """Detect whether to use AllocTRES (newer Slurm) or AllocGRES (older Slurm).
+
+    Caches the result so we only probe once per process lifetime.
+    """
+    # Try AllocTRES first (newer Slurm 20.11+)
+    try:
+        proc = subprocess.run(
+            ["sacct", "--helpformat"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if "AllocTRES" in proc.stdout:
+            return "AllocTRES"
+        if "AllocGRES" in proc.stdout:
+            return "AllocGRES"
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    # Default to AllocTRES as it's the newer standard
+    return "AllocTRES"
+
+
+def parse_gpu_count(gres_str: str) -> int:
+    """Parse GPU count from GRES/TRES string.
+
+    Handles multiple formats:
+    - Old GRES: "gpu:2", "gpu:a100:4"
+    - New TRES: "gres/gpu=2", "gres/gpu:a100=4", "billing=10,cpu=4,gres/gpu=2,mem=16G"
+    """
+    if not gres_str:
+        return 0
+
+    # Match patterns like: gpu:2, gpu=2, gres/gpu=2, gres/gpu:a100=4
+    match = re.search(r'gpu[^=:,]*[=:](\d+)', gres_str.lower())
+    if match:
+        return int(match.group(1))
+    return 0
 
 
 def parse_time_to_seconds(time_str: str) -> float:
@@ -94,8 +137,9 @@ def get_job_metadata_batch(job_ids: list[str], user: str) -> dict[str, dict]:
     if not job_ids:
         return {}
 
-    # Query all job IDs at once using comma-separated list
+    gres_field = get_gres_field_name()
     job_list = ",".join(job_ids)
+
     try:
         proc = subprocess.run(
             [
@@ -105,7 +149,7 @@ def get_job_metadata_batch(job_ids: list[str], user: str) -> dict[str, dict]:
                 "-u",
                 user,
                 "--noheader",
-                "--format=JobID,State,Partition,AllocTRES,Elapsed",
+                f"--format=JobID,State,Partition,{gres_field},Elapsed",
                 "--parsable2",
                 "-X",  # Only show main job entries, not steps
             ],
@@ -139,7 +183,8 @@ def get_job_metadata_batch(job_ids: list[str], user: str) -> dict[str, dict]:
 
 def get_job_details(job_id: str, user: str) -> dict:
     """Get detailed information about a job from sacct."""
-    fmt = "JobID,JobName,State,ExitCode,End,CPUTimeRAW,TotalCPU,ReqMem,MaxRSS,AllocCPUS,AllocTRES,Elapsed"
+    gres_field = get_gres_field_name()
+    fmt = f"JobID,JobName,State,ExitCode,End,CPUTimeRAW,TotalCPU,ReqMem,MaxRSS,AllocCPUS,{gres_field},Elapsed"
     try:
         proc = subprocess.run(
             [
@@ -209,13 +254,7 @@ def get_job_details(job_id: str, user: str) -> dict:
         try:
             elapsed_hours = parse_time_to_seconds(elapsed) / 3600.0 if elapsed else 0
             cpus = int(alloc_cpus) if alloc_cpus else 0
-            gpus = 0
-            if alloc_gres:
-                # Parse GPU count from TRES (e.g., "gres/gpu=2" or "gres/gpu:a100=4")
-                # Also handles old GRES format (gpu:2)
-                gpu_match = re.search(r'gpu[^=:]*[=:](\d+)', alloc_gres)
-                if gpu_match:
-                    gpus = int(gpu_match.group(1))
+            gpus = parse_gpu_count(alloc_gres)
             # SU = CPU-hours + GPU-hours * 10
             job_sus = (cpus * elapsed_hours) + (gpus * elapsed_hours * 10)
         except (ValueError, TypeError):
@@ -1766,6 +1805,8 @@ def get_cost_data(user: str, days: int = 30) -> dict:
     from datetime import datetime, timedelta
     from collections import defaultdict
 
+    gres_field = get_gres_field_name()
+
     # Fetch job history with resource info
     try:
         result = subprocess.run(
@@ -1774,7 +1815,7 @@ def get_cost_data(user: str, days: int = 30) -> dict:
                 "-u",
                 user,
                 f"--starttime=now-{days}days",
-                "--format=JobID,JobName,Partition,AllocCPUS,AllocTRES,Elapsed,State,Start",
+                f"--format=JobID,JobName,Partition,AllocCPUS,{gres_field},Elapsed,State,Start",
                 "--parsable2",
                 "--noheader",
             ],
@@ -1815,14 +1856,7 @@ def get_cost_data(user: str, days: int = 30) -> dict:
         state = parts[6].strip()
         start_str = parts[7].strip()
 
-        # Parse GPUs from TRES (format: gres/gpu=2 or gres/gpu:a100=4)
-        gpus = 0
-        if gres:
-            import re
-            # Match both old GRES format (gpu:2) and new TRES format (gres/gpu=2)
-            gpu_match = re.search(r'gpu[^=:]*[=:](\d+)', gres)
-            if gpu_match:
-                gpus = int(gpu_match.group(1))
+        gpus = parse_gpu_count(gres)
 
         # Parse elapsed time to hours
         elapsed_hours = _parse_time_to_seconds(elapsed_str) / 3600
