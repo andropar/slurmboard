@@ -105,7 +105,7 @@ def get_job_metadata_batch(job_ids: list[str], user: str) -> dict[str, dict]:
                 "-u",
                 user,
                 "--noheader",
-                "--format=JobID,State,Partition,AllocGRES,Elapsed",
+                "--format=JobID,State,Partition,AllocTRES,Elapsed",
                 "--parsable2",
                 "-X",  # Only show main job entries, not steps
             ],
@@ -139,7 +139,7 @@ def get_job_metadata_batch(job_ids: list[str], user: str) -> dict[str, dict]:
 
 def get_job_details(job_id: str, user: str) -> dict:
     """Get detailed information about a job from sacct."""
-    fmt = "JobID,JobName,State,ExitCode,End,CPUTimeRAW,TotalCPU,ReqMem,MaxRSS,AllocCPUS,AllocGRES,Elapsed"
+    fmt = "JobID,JobName,State,ExitCode,End,CPUTimeRAW,TotalCPU,ReqMem,MaxRSS,AllocCPUS,AllocTRES,Elapsed"
     try:
         proc = subprocess.run(
             [
@@ -211,12 +211,11 @@ def get_job_details(job_id: str, user: str) -> dict:
             cpus = int(alloc_cpus) if alloc_cpus else 0
             gpus = 0
             if alloc_gres:
-                # Parse GPU count from GRES (e.g., "gpu:2" or "gpu:a100:4")
-                for gres_part in alloc_gres.split(","):
-                    if "gpu" in gres_part.lower():
-                        gres_parts = gres_part.split(":")
-                        gpus = int(gres_parts[-1]) if gres_parts[-1].isdigit() else 0
-                        break
+                # Parse GPU count from TRES (e.g., "gres/gpu=2" or "gres/gpu:a100=4")
+                # Also handles old GRES format (gpu:2)
+                gpu_match = re.search(r'gpu[^=:]*[=:](\d+)', alloc_gres)
+                if gpu_match:
+                    gpus = int(gpu_match.group(1))
             # SU = CPU-hours + GPU-hours * 10
             job_sus = (cpus * elapsed_hours) + (gpus * elapsed_hours * 10)
         except (ValueError, TypeError):
@@ -1775,7 +1774,7 @@ def get_cost_data(user: str, days: int = 30) -> dict:
                 "-u",
                 user,
                 f"--starttime=now-{days}days",
-                "--format=JobID,JobName,Partition,AllocCPUS,AllocGRES,Elapsed,State,Start",
+                "--format=JobID,JobName,Partition,AllocCPUS,AllocTRES,Elapsed,State,Start",
                 "--parsable2",
                 "--noheader",
             ],
@@ -1816,11 +1815,12 @@ def get_cost_data(user: str, days: int = 30) -> dict:
         state = parts[6].strip()
         start_str = parts[7].strip()
 
-        # Parse GPUs from GRES (format: gpu:2 or gpu:a100:4)
+        # Parse GPUs from TRES (format: gres/gpu=2 or gres/gpu:a100=4)
         gpus = 0
         if gres:
             import re
-            gpu_match = re.search(r'gpu[^:]*:(\d+)', gres)
+            # Match both old GRES format (gpu:2) and new TRES format (gres/gpu=2)
+            gpu_match = re.search(r'gpu[^=:]*[=:](\d+)', gres)
             if gpu_match:
                 gpus = int(gpu_match.group(1))
 
