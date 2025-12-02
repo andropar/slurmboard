@@ -1,10 +1,11 @@
 """Configuration management for Slurm Dashboard."""
+from __future__ import annotations
 
 import argparse
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 
 # Default pattern matches: {log_root}/{job_name}/job.{out|err}.{job_id}
@@ -87,7 +88,7 @@ class LogPattern:
             return result
         return None
 
-    def validate(self) -> list[str]:
+    def validate(self) -> List[str]:
         """
         Validate the pattern has required variables.
 
@@ -188,7 +189,7 @@ Template variables:
 
 
 # Global config instance, set during app initialization
-_config: Config | None = None
+_config: Optional[Config] = None
 
 
 def get_config() -> Config:

@@ -1,7 +1,9 @@
 """REST API routes for Slurm Dashboard."""
+from __future__ import annotations
 
 import time
 from functools import lru_cache
+from typing import Dict
 
 from flask import Blueprint, Response, jsonify, request
 
@@ -360,7 +362,7 @@ def submit() -> Response:
 
 
 # In-memory template storage (for simplicity; could use file-based storage)
-_job_templates: dict[str, dict] = {}
+_job_templates: Dict[str, dict] = {}
 
 
 @api.route("/templates", methods=["GET"])

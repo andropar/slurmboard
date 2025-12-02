@@ -1,8 +1,10 @@
 """Slurm command wrappers for querying job information."""
+from __future__ import annotations
 
 import re
 import subprocess
 from pathlib import Path
+from typing import Optional
 
 
 def parse_time_to_seconds(time_str: str) -> float:
@@ -578,11 +580,11 @@ def get_script_content(script_path: str, max_lines: int = 200) -> dict:
 
 def resubmit_job(
     script_path: str,
-    work_dir: str | None = None,
-    partition: str | None = None,
-    time_limit: str | None = None,
-    memory: str | None = None,
-    cpus: int | None = None,
+    work_dir: Optional[str] = None,
+    partition: Optional[str] = None,
+    time_limit: Optional[str] = None,
+    memory: Optional[str] = None,
+    cpus: Optional[int] = None,
 ) -> dict:
     """
     Resubmit a job with optional parameter overrides.
