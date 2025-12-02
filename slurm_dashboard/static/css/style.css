@@ -1342,19 +1342,23 @@ button.copy-btn:hover { background: #38a169; }
 }
 
 .timeline-nav-controls {
-    gap: 2px;
+    gap: 4px;
+    background: var(--bg-tertiary);
+    padding: 4px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
 }
 
 .timeline-nav-btn {
-    width: 28px;
-    height: 28px;
-    background: var(--bg-tertiary);
+    width: 32px;
+    height: 32px;
+    background: var(--bg-primary);
     border: 1px solid var(--border-color);
-    color: var(--text-muted);
-    border-radius: 4px;
+    color: var(--text-secondary);
+    border-radius: 6px;
     cursor: pointer;
     font-size: 16px;
-    font-weight: 500;
+    font-weight: 600;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1929,30 +1933,48 @@ button.copy-btn:hover { background: #38a169; }
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 2000;
+    padding: 20px;
 }
 
+.modal,
 .modal-content {
     background: var(--bg-primary);
-    border-radius: 12px;
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+    border-radius: 16px;
+    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
     max-width: 90vw;
     max-height: 85vh;
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    border: 1px solid var(--border-color);
 }
 
 .modal-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 16px 20px;
+    padding: 20px 24px;
     border-bottom: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.modal-body {
+    padding: 24px;
+    overflow-y: auto;
+    flex: 1;
 }
 
 .modal-header h3 {
@@ -2817,6 +2839,24 @@ button.copy-btn:hover { background: #38a169; }
     color: var(--eff-bad);
 }
 
+.efficiency-explanation {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin: 8px 0;
+    padding: 8px 12px;
+    background: var(--bg-tertiary);
+    border-radius: 6px;
+    border-left: 3px solid var(--accent);
+}
+
+.grade-d .efficiency-explanation {
+    border-left-color: var(--eff-bad);
+}
+
+.grade-c .efficiency-explanation {
+    border-left-color: var(--eff-medium);
+}
+
 .efficiency-details {
     display: flex;
     gap: 12px;
@@ -2931,20 +2971,15 @@ button.copy-btn:hover { background: #38a169; }
 
 /* Quick Submit Modal */
 .submit-modal {
-    width: 600px;
+    width: 640px;
     max-width: 95vw;
 }
 
-.submit-modal .modal-header h2 {
-    margin: 0;
-    font-size: 18px;
-    color: var(--text-primary);
-}
-
 .submit-modal .modal-body {
-    padding: 20px;
-    max-height: 60vh;
+    padding: 24px;
+    max-height: 65vh;
     overflow-y: auto;
+    background: var(--bg-primary);
 }
 
 /* Submit Tabs */
@@ -3997,9 +4032,8 @@ button.copy-btn:hover { background: #38a169; }
     display: flex;
     align-items: center;
     gap: 1rem;
-    padding: 0.5rem 1rem;
-    background: var(--bg-secondary);
-    border-bottom: 1px solid var(--border-color);
+    padding: 0.75rem 1.5rem;
+    background: transparent;
     flex-wrap: wrap;
 }
 

@@ -13,8 +13,8 @@
         </div>
         <div class="header-controls">
             <div class="layout-selector">
-                <button class="layout-btn active" data-layout="default" onclick="setLayout('default')" title="Default layout">Default</button>
-                <button class="layout-btn" data-layout="monitoring" onclick="setLayout('monitoring')" title="Focus on job tables">Monitor</button>
+                <button class="layout-btn" data-layout="default" onclick="setLayout('default')" title="Default layout">Default</button>
+                <button class="layout-btn active" data-layout="monitoring" onclick="setLayout('monitoring')" title="Focus on job tables">Monitor</button>
                 <button class="layout-btn" data-layout="debugging" onclick="setLayout('debugging')" title="Focus on logs">Debug</button>
                 <button class="layout-btn" data-layout="compact" onclick="setLayout('compact')" title="Compact view">Compact</button>
             </div>
@@ -121,7 +121,7 @@
             <span class="filter-count" id="filter-count">Showing all jobs</span>
         </div>
     </div>
-    <div class="layout" id="dashboard-layout" data-layout="default">
+    <div class="layout" id="dashboard-layout" data-layout="monitoring">
         <div class="table-column" id="table-column">
             <div class="card widget insights-panel" id="insights-panel" data-widget="insights">
                 <div class="widget-header insights-header">

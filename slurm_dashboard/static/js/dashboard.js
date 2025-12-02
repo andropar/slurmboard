@@ -2883,6 +2883,26 @@ function renderInsights() {
     if (insightsData.efficiency_score) {
         const eff = insightsData.efficiency_score;
         const gradeClass = eff.grade === 'A' ? 'grade-a' : eff.grade === 'B' ? 'grade-b' : eff.grade === 'C' ? 'grade-c' : 'grade-d';
+
+        // Build explanation based on efficiency metrics
+        let explanation = '';
+        const memEff = eff.memory_efficiency || 0;
+        const timeEff = eff.time_efficiency || 0;
+
+        if (eff.grade === 'A') {
+            explanation = 'Great resource utilization';
+        } else if (eff.grade === 'B') {
+            explanation = 'Good efficiency, minor optimization possible';
+        } else if (eff.grade === 'C') {
+            if (memEff < 50) explanation = 'Consider requesting less memory';
+            else if (timeEff < 50) explanation = 'Jobs finishing much faster than time limit';
+            else explanation = 'Some resource optimization recommended';
+        } else {
+            if (memEff < 30) explanation = 'Jobs using <30% of requested memory';
+            else if (timeEff < 30) explanation = 'Jobs using <30% of time limit';
+            else explanation = 'Significant resource overallocation detected';
+        }
+
         html += `
             <div class="insight-card efficiency-card">
                 <div class="insight-icon">📊</div>
@@ -2892,9 +2912,10 @@ function renderInsights() {
                         <span class="efficiency-grade">${eff.grade}</span>
                         <span class="efficiency-label">${eff.label}</span>
                     </div>
+                    <div class="efficiency-explanation">${explanation}</div>
                     <div class="efficiency-details">
-                        ${eff.memory_efficiency ? `<span>Memory: ${eff.memory_efficiency}%</span>` : ''}
-                        ${eff.time_efficiency ? `<span>Time: ${eff.time_efficiency}%</span>` : ''}
+                        ${eff.memory_efficiency ? `<span title="Actual memory used vs requested">Memory: ${eff.memory_efficiency}%</span>` : ''}
+                        ${eff.time_efficiency ? `<span title="Actual runtime vs time limit">Time: ${eff.time_efficiency}%</span>` : ''}
                     </div>
                 </div>
             </div>
