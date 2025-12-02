@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Slurm Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="header-row">
+        <div class="header-meta">
+            <span class="last-updated-label">Updated</span>
+            <span class="last-updated-value" id="last-updated">–</span>
+        </div>
+        <div class="header-controls">
+            <div class="layout-selector">
+                <button class="layout-btn active" data-layout="default" onclick="setLayout('default')" title="Default layout">Default</button>
+                <button class="layout-btn" data-layout="monitoring" onclick="setLayout('monitoring')" title="Focus on job tables">Monitor</button>
+                <button class="layout-btn" data-layout="debugging" onclick="setLayout('debugging')" title="Focus on logs">Debug</button>
+                <button class="layout-btn" data-layout="compact" onclick="setLayout('compact')" title="Compact view">Compact</button>
+            </div>
+            <button class="quick-submit-btn" onclick="openSubmitModal()" title="Submit new job (Ctrl+N)">+ Submit</button>
+            <button class="templates-btn" onclick="openTemplateModal()" title="Manage templates">Templates</button>
+            <div class="view-toggle">
+                <button class="view-btn active" id="view-table-btn" onclick="setView('table')" title="Table view">Table</button>
+                <button class="view-btn" id="view-timeline-btn" onclick="setView('timeline')" title="Timeline view">Timeline</button>
+                <button class="view-btn" id="view-dag-btn" onclick="setView('dag')" title="Pipeline DAG view">Pipelines</button>
+                <button class="view-btn" id="view-heatmap-btn" onclick="setView('heatmap')" title="Activity heatmaps">Heatmap</button>
+            </div>
+            <div class="search-wrapper">
+                <input type="text" class="search-box" id="search-box" placeholder="Search jobs... (/)">
+                <button class="filter-toggle" id="filter-toggle" onclick="toggleAdvancedFilters()" title="Advanced filters">
+                    <span class="filter-icon">&#9660;</span>
+                </button>
+            </div>
+            <button class="theme-toggle" id="theme-toggle" title="Toggle dark mode">
+                <span class="theme-icon-light">&#9790;</span>
+                <span class="theme-icon-dark">&#9788;</span>
+            </button>
+        </div>
+    </div>
+    <!-- Quick Filter Chips & Advanced Filters -->
+    <div class="filter-bar" id="filter-bar">
+        <div class="quick-filters">
+            <span class="quick-filter-label">Quick:</span>
+            <button class="filter-chip" data-filter="failed" onclick="toggleQuickFilter('failed')">Failed</button>
+            <button class="filter-chip" data-filter="today" onclick="toggleQuickFilter('today')">Today</button>
+            <button class="filter-chip" data-filter="gpu" onclick="toggleQuickFilter('gpu')">GPU</button>
+            <button class="filter-chip" data-filter="long" onclick="toggleQuickFilter('long')">Long-running</button>
+            <button class="filter-chip" data-filter="pending" onclick="toggleQuickFilter('pending')">Pending</button>
+        </div>
+        <div class="saved-searches-dropdown">
+            <select id="saved-searches" onchange="applySavedSearch()">
+                <option value="">Saved searches...</option>
+            </select>
+            <button class="save-search-btn" onclick="saveCurrentSearch()" title="Save current filters">Save</button>
+        </div>
+        <div class="active-filters" id="active-filters"></div>
+    </div>
+    <div class="advanced-filters" id="advanced-filters" style="display: none;">
+        <div class="filter-grid">
+            <div class="filter-group">
+                <label>State</label>
+                <select id="filter-state" onchange="applyAdvancedFilters()">
+                    <option value="">All states</option>
+                    <option value="running">Running</option>
+                    <option value="pending">Pending</option>
+                    <option value="completed">Completed</option>
+                    <option value="failed">Failed</option>
+                    <option value="cancelled">Cancelled</option>
+                    <option value="timeout">Timeout</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Partition</label>
+                <select id="filter-partition" onchange="applyAdvancedFilters()">
+                    <option value="">All partitions</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Name pattern</label>
+                <input type="text" id="filter-name" placeholder="e.g., train_*" oninput="applyAdvancedFilters()">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="filter-name-regex"> Regex
+                </label>
+            </div>
+            <div class="filter-group">
+                <label>Date range</label>
+                <div class="date-range">
+                    <input type="date" id="filter-date-from" onchange="applyAdvancedFilters()">
+                    <span>to</span>
+                    <input type="date" id="filter-date-to" onchange="applyAdvancedFilters()">
+                </div>
+            </div>
+            <div class="filter-group">
+                <label>Runtime</label>
+                <div class="runtime-range">
+                    <input type="text" id="filter-runtime-min" placeholder="Min (e.g., 1h)" oninput="applyAdvancedFilters()">
+                    <span>to</span>
+                    <input type="text" id="filter-runtime-max" placeholder="Max (e.g., 24h)" oninput="applyAdvancedFilters()">
+                </div>
+            </div>
+            <div class="filter-group">
+                <label>Exit code</label>
+                <input type="text" id="filter-exit-code" placeholder="e.g., 0, 1, !0" oninput="applyAdvancedFilters()">
+            </div>
+        </div>
+        <div class="filter-actions">
+            <button class="btn-secondary" onclick="clearAllFilters()">Clear All</button>
+            <span class="filter-count" id="filter-count">Showing all jobs</span>
+        </div>
+    </div>
+    <div class="layout" id="dashboard-layout" data-layout="default">
+        <div class="table-column" id="table-column">
+            <div class="card widget insights-panel" id="insights-panel" data-widget="insights">
+                <div class="widget-header insights-header">
+                    <h2>Insights</h2>
+                    <div class="widget-controls">
+                        <button class="widget-minimize" onclick="toggleWidgetMinimize('insights-panel')" title="Minimize">−</button>
+                    </div>
+                </div>
+                <div class="widget-content insights-content" id="insights-content">
+                    <div class="insights-loading">Analyzing job history...</div>
+                </div>
+            </div>
+            <div class="card widget running-wrapper" id="running-panel" data-widget="running">
+                <div class="widget-header table-header-row">
+                    <div class="table-header-left">
+                        <h2 style="margin-bottom: 0;">Running Jobs</h2>
+                        <div class="stat-badge">
+                            <span>Running</span>
+                            <span class="stat-num" id="stat-running">0</span>
+                        </div>
+                    </div>
+                    <div class="table-header-right">
+                        <div class="batch-actions" id="running-batch-actions" style="display: none;">
+                            <span class="selection-count" id="running-selection-count">0 selected</span>
+                            <button class="batch-btn batch-cancel" onclick="batchCancel('running')">Cancel</button>
+                            <button class="batch-btn batch-export" onclick="batchExport('running')">Export</button>
+                            <button class="batch-btn-clear" onclick="clearSelection('running')" title="Clear selection">&times;</button>
+                        </div>
+                        <div class="widget-controls">
+                            <button class="widget-minimize" onclick="toggleWidgetMinimize('running-panel')" title="Minimize">−</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="running-table-scroll">
+                    <table id="running-table">
+                        <thead>
+                            <tr>
+                                <th class="select-col"><input type="checkbox" id="select-all-running" onchange="toggleSelectAll('running', this.checked)" title="Select all"></th>
+                                <th class="job-col sortable col-main" data-sort="name">Job</th>
+                                <th class="sortable col-state" data-sort="state">State</th>
+                                <th class="sortable col-runtime" data-sort="runtime">Runtime</th>
+                                <th class="col-actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="running-body"><tr><td colspan="5"><div class="empty-state">Loading…</div></td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card widget recent-wrapper" id="recent-panel" data-widget="recent">
+                <div class="widget-header recent-header">
+                    <div class="recent-header-left">
+                        <h2>Recent Jobs</h2>
+                        <button class="compare-btn" id="compare-btn" onclick="startComparison()" style="display: none;">Compare</button>
+                    </div>
+                    <div class="recent-header-right">
+                        <div class="batch-actions" id="recent-batch-actions" style="display: none;">
+                            <span class="selection-count" id="recent-selection-count">0 selected</span>
+                            <button class="batch-btn batch-resubmit" onclick="batchResubmit('recent')">Resubmit</button>
+                            <button class="batch-btn batch-export" onclick="batchExport('recent')">Export</button>
+                            <button class="batch-btn-clear" onclick="clearSelection('recent')" title="Clear selection">&times;</button>
+                        </div>
+                        <div class="widget-controls">
+                            <button class="widget-minimize" onclick="toggleWidgetMinimize('recent-panel')" title="Minimize">−</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="widget-content">
+                    <div class="table-scroll">
+                        <table id="recent-table">
+                            <thead>
+                                <tr>
+                                    <th class="select-col"><input type="checkbox" id="select-all-recent" onchange="toggleSelectAll('recent', this.checked)" title="Select all"></th>
+                                    <th class="sortable" data-sort="updated">Updated</th>
+                                    <th class="job-col sortable" data-sort="name">Name</th>
+                                    <th>ID</th>
+                                    <th>Stdout</th>
+                                    <th>Stderr</th>
+                                    <th class="sortable" data-sort="size">Size</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recent-body"><tr><td colspan="8"><div class="empty-state">Loading…</div></td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="card widget" id="log-panel" data-widget="logs">
+            <div class="widget-header log-header">
+                <h2 id="log-title">Logs</h2>
+                <div class="log-controls">
+                    <div class="annotation-nav" id="annotation-nav">
+                        <span class="annotation-count" id="annotation-count"></span>
+                        <button class="annotation-nav-btn" id="annotation-prev" onclick="navigateAnnotation('prev')" title="Previous annotation">&larr;</button>
+                        <button class="annotation-nav-btn" id="annotation-next" onclick="navigateAnnotation('next')" title="Next annotation">&rarr;</button>
+                    </div>
+                    <div class="log-search-wrapper" id="log-search-wrapper">
+                        <input type="text" class="log-search-input" id="log-search-input" placeholder="Search log... (Ctrl+G)">
+                        <div class="log-search-controls">
+                            <span class="log-search-count" id="log-search-count"></span>
+                            <button class="log-search-btn" id="log-search-prev" title="Previous match">&uarr;</button>
+                            <button class="log-search-btn" id="log-search-next" title="Next match">&darr;</button>
+                            <button class="log-search-btn" id="log-search-close" title="Close search">&times;</button>
+                        </div>
+                    </div>
+                    <button class="scroll-toggle active" id="scroll-toggle" onclick="toggleAutoScroll()">Auto-scroll</button>
+                    <div class="widget-controls">
+                        <button class="widget-minimize" onclick="toggleWidgetMinimize('log-panel')" title="Minimize">−</button>
+                    </div>
+                </div>
+            </div>
+            <pre id="log-content"></pre>
+        </div>
+    </div>
+    <div class="timeline-view" id="timeline-view" style="display: none;">
+        <div class="timeline-header">
+            <div class="timeline-controls">
+                <div class="timeline-nav-controls">
+                    <button class="timeline-nav-btn" onclick="timelineZoomIn()" title="Zoom in (+)">+</button>
+                    <button class="timeline-nav-btn" onclick="timelineZoomOut()" title="Zoom out (-)">−</button>
+                    <button class="timeline-nav-btn" onclick="timelineReset()" title="Reset zoom">Reset</button>
+                    <span class="timeline-zoom-level" id="timeline-zoom-level">100%</span>
+                </div>
+                <div class="timeline-zoom-controls">
+                    <label>Preset:</label>
+                    <button class="zoom-btn" onclick="setTimelineZoom('hour')">Hour</button>
+                    <button class="zoom-btn active" onclick="setTimelineZoom('day')">Day</button>
+                    <button class="zoom-btn" onclick="setTimelineZoom('week')">Week</button>
+                </div>
+                <div class="timeline-filter-controls">
+                    <label>Filter:</label>
+                    <select id="timeline-state-filter" onchange="filterTimeline()">
+                        <option value="all">All States</option>
+                        <option value="completed">Completed</option>
+                        <option value="running">Running</option>
+                        <option value="pending">Pending</option>
+                        <option value="failed">Failed/Cancelled</option>
+                    </select>
+                    <input type="text" class="timeline-name-filter" id="timeline-name-filter" placeholder="Filter by name..." oninput="filterTimeline()">
+                </div>
+                <div class="timeline-group-controls">
+                    <label>
+                        <input type="checkbox" id="timeline-group-arrays" onchange="filterTimeline()">
+                        Group arrays
+                    </label>
+                </div>
+                <div class="timeline-days-controls">
+                    <label>History:</label>
+                    <select id="timeline-days" onchange="loadTimelineData()">
+                        <option value="1">1 day</option>
+                        <option value="3">3 days</option>
+                        <option value="7" selected>7 days</option>
+                        <option value="14">14 days</option>
+                        <option value="30">30 days</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div class="timeline-container" id="timeline-container">
+            <div class="timeline-loading">Loading timeline...</div>
+        </div>
+        <div class="timeline-minimap" id="timeline-minimap">
+            <div class="minimap-viewport" id="minimap-viewport"></div>
+        </div>
+    </div>
+    <div class="dag-view" id="dag-view" style="display: none;">
+        <div class="dag-header">
+            <div class="dag-controls">
+                <button class="dag-refresh-btn" onclick="loadDagData()">Refresh</button>
+                <span class="dag-status" id="dag-status"></span>
+            </div>
+        </div>
+        <div class="dag-content">
+            <div class="dag-sidebar" id="dag-sidebar">
+                <h3>Pipelines</h3>
+                <div class="dag-pipeline-list" id="dag-pipeline-list">
+                    <div class="dag-loading">Loading pipelines...</div>
+                </div>
+            </div>
+            <div class="dag-main" id="dag-main">
+                <div class="dag-empty">
+                    <div class="dag-empty-icon">🔗</div>
+                    <div class="dag-empty-text">Select a pipeline to view its dependency graph</div>
+                    <div class="dag-empty-hint">Pipelines are jobs connected by dependencies (afterok, afterany, etc.)</div>
+                </div>
+            </div>
+        </div>
+        <div class="dag-legend">
+            <span class="dag-legend-item"><span class="dag-node-sample completed"></span> Completed</span>
+            <span class="dag-legend-item"><span class="dag-node-sample running"></span> Running</span>
+            <span class="dag-legend-item"><span class="dag-node-sample pending"></span> Pending</span>
+            <span class="dag-legend-item"><span class="dag-node-sample failed"></span> Failed</span>
+        </div>
+    </div>
+    <div class="heatmap-view" id="heatmap-view" style="display: none;">
+        <div class="heatmap-header">
+            <div class="heatmap-controls">
+                <div class="heatmap-view-toggle">
+                    <button class="heatmap-tab active" data-view="activity" onclick="setHeatmapView('activity')">Activity</button>
+                    <button class="heatmap-tab" data-view="success" onclick="setHeatmapView('success')">Success Rate</button>
+                    <button class="heatmap-tab" data-view="pattern" onclick="setHeatmapView('pattern')">Day/Hour Pattern</button>
+                </div>
+                <div class="heatmap-days-controls">
+                    <label>History:</label>
+                    <select id="heatmap-days" onchange="loadHeatmapData()">
+                        <option value="30">30 days</option>
+                        <option value="60">60 days</option>
+                        <option value="90" selected>90 days</option>
+                        <option value="180">180 days</option>
+                        <option value="365">1 year</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div class="heatmap-container" id="heatmap-container">
+            <div class="heatmap-loading">Loading activity data...</div>
+        </div>
+        <div class="heatmap-legend" id="heatmap-legend">
+            <span class="heatmap-legend-label">Less</span>
+            <span class="heatmap-legend-cell" data-level="0"></span>
+            <span class="heatmap-legend-cell" data-level="1"></span>
+            <span class="heatmap-legend-cell" data-level="2"></span>
+            <span class="heatmap-legend-cell" data-level="3"></span>
+            <span class="heatmap-legend-cell" data-level="4"></span>
+            <span class="heatmap-legend-label">More</span>
+        </div>
+    </div>
+    <!-- Quick Submit Modal -->
+    <div class="modal-overlay" id="submit-modal" style="display: none;">
+        <div class="modal submit-modal">
+            <div class="modal-header">
+                <h2>Quick Submit</h2>
+                <button class="modal-close" onclick="closeSubmitModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="submit-tabs">
+                    <button class="submit-tab active" data-tab="script" onclick="switchSubmitTab('script')">Script</button>
+                    <button class="submit-tab" data-tab="template" onclick="switchSubmitTab('template')">From Template</button>
+                </div>
+                <div class="submit-tab-content" id="submit-tab-script">
+                    <div class="form-group">
+                        <label for="submit-script-path">Script Path</label>
+                        <input type="text" id="submit-script-path" placeholder="/path/to/script.sh">
+                        <span class="form-hint">Or write script content below</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="submit-script-content">Script Content</label>
+                        <textarea id="submit-script-content" rows="8" placeholder="#!/bin/bash
+#SBATCH --job-name=my_job
+#SBATCH --time=1:00:00
+
+echo 'Hello from Slurm!'"></textarea>
+                    </div>
+                </div>
+                <div class="submit-tab-content" id="submit-tab-template" style="display: none;">
+                    <div class="form-group">
+                        <label for="submit-template-select">Select Template</label>
+                        <select id="submit-template-select" onchange="loadTemplate()">
+                            <option value="">-- Choose a template --</option>
+                        </select>
+                    </div>
+                    <div class="template-preview" id="template-preview" style="display: none;">
+                        <div class="template-preview-header">Template Preview</div>
+                        <pre id="template-preview-content"></pre>
+                    </div>
+                </div>
+                <div class="submit-options">
+                    <h3>Job Options <span class="options-hint">(override SBATCH directives)</span></h3>
+                    <div class="options-grid">
+                        <div class="form-group">
+                            <label for="submit-job-name">Job Name</label>
+                            <input type="text" id="submit-job-name" placeholder="my_job">
+                        </div>
+                        <div class="form-group">
+                            <label for="submit-partition">Partition</label>
+                            <select id="submit-partition">
+                                <option value="">Default</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="submit-time">Time Limit</label>
+                            <input type="text" id="submit-time" placeholder="1:00:00">
+                        </div>
+                        <div class="form-group">
+                            <label for="submit-memory">Memory</label>
+                            <input type="text" id="submit-memory" placeholder="4G">
+                        </div>
+                        <div class="form-group">
+                            <label for="submit-cpus">CPUs</label>
+                            <input type="number" id="submit-cpus" min="1" placeholder="1">
+                        </div>
+                        <div class="form-group">
+                            <label for="submit-gpus">GPUs</label>
+                            <input type="number" id="submit-gpus" min="0" placeholder="0">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="submit-workdir">Working Directory</label>
+                        <input type="text" id="submit-workdir" placeholder="/path/to/workdir">
+                    </div>
+                    <div class="form-group">
+                        <label for="submit-dependency">Dependency</label>
+                        <input type="text" id="submit-dependency" placeholder="afterok:12345">
+                        <span class="form-hint">e.g., afterok:12345, afterany:12346</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="submit-actions-left">
+                    <button class="btn-secondary" onclick="saveAsTemplate()">Save as Template</button>
+                </div>
+                <div class="submit-actions-right">
+                    <button class="btn-secondary" onclick="closeSubmitModal()">Cancel</button>
+                    <button class="btn-primary" onclick="submitJob()">Submit Job</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Template Manager Modal -->
+    <div class="modal-overlay" id="template-modal" style="display: none;">
+        <div class="modal template-modal">
+            <div class="modal-header">
+                <h2>Manage Templates</h2>
+                <button class="modal-close" onclick="closeTemplateModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="template-list" id="template-list">
+                    <div class="template-empty">No templates saved yet</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeTemplateModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Save Template Modal -->
+    <div class="modal-overlay" id="save-template-modal" style="display: none;">
+        <div class="modal save-template-modal">
+            <div class="modal-header">
+                <h2>Save Template</h2>
+                <button class="modal-close" onclick="closeSaveTemplateModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="template-name">Template Name</label>
+                    <input type="text" id="template-name" placeholder="My Job Template">
+                </div>
+                <div class="form-group">
+                    <label for="template-description">Description</label>
+                    <input type="text" id="template-description" placeholder="Optional description">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeSaveTemplateModal()">Cancel</button>
+                <button class="btn-primary" onclick="confirmSaveTemplate()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>
