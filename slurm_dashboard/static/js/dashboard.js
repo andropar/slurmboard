@@ -1857,53 +1857,104 @@ function renderRunning(rows) {
 
 function renderRecent(rows) {
     if (!rows.length) {
-        recentBody.innerHTML = '<tr><td colspan="6"><div class="empty-state">No recent logs found.</div></td></tr>';
+        recentBody.innerHTML = '<div class="empty-state">No recent jobs found.</div>';
         updateBatchActionsVisibility('recent');
         return;
     }
     recentBody.innerHTML = rows.map(job => {
-        const selectedCompare = selectedForCompare.has(job.log_key);
         const isSelected = selectedRecentJobs.has(job.id);
         const stateClass = job.state ? `state-${job.state.toLowerCase().split(' ')[0]}` : '';
+        const isActive = currentLogKey === job.log_key;
         return `
-        <tr class="recent-job-row ${currentLogKey === job.log_key ? 'active-log' : ''} ${selectedCompare ? 'selected-for-compare' : ''} ${isSelected ? 'batch-selected' : ''} ${stateClass}" data-log-key="${job.log_key}" data-job-id="${job.id}">
-            <td class="select-col">
-                <input type="checkbox" class="batch-select" ${isSelected ? 'checked' : ''} onchange="toggleJobSelection('recent', '${job.id}', this.checked)">
-            </td>
-            <td class="updated-col">
-                <span class="time-ago">${relativeTime(job.updated)}</span>
-            </td>
-            <td class="job-name-col">
-                <span class="job-name-text">${job.name}</span>
-                ${job.state ? `<span class="job-state-badge ${stateClass}">${formatStateShort(job.state)}</span>` : ''}
-            </td>
-            <td class="job-id-col">
-                <code class="job-id-code">${job.id}</code>
-                <button class="copy-id-btn" onclick="copyToClipboard('${job.id}', this)" title="Copy ID">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                </button>
-            </td>
-            <td class="logs-col">
-                <div class="log-btns">
-                    <button class="log-btn log-btn-stdout" onclick="openLog('${job.log_key}','stdout')">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                        stdout
-                    </button>
-                    <button class="log-btn log-btn-stderr" onclick="openLog('${job.log_key}','stderr')">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                        stderr
+        <div class="job-row ${isActive ? 'active-log' : ''} ${isSelected ? 'batch-selected' : ''}" data-log-key="${job.log_key}" data-job-id="${job.id}">
+            <div class="job-row-main">
+                <input type="checkbox" class="job-checkbox" ${isSelected ? 'checked' : ''} onchange="toggleJobSelection('recent', '${job.id}', this.checked)">
+                <div class="job-info" onclick="toggleJobExpand('${job.id}')">
+                    <span class="job-name">${job.name}</span>
+                    <span class="job-state-badge ${stateClass}">${formatStateShort(job.state || 'UNKNOWN')}</span>
+                    <span class="job-id" onclick="event.stopPropagation(); copyToClipboard('${job.id}', this)" title="Click to copy">${job.id}</span>
+                    <span class="job-time">${relativeTime(job.updated)}</span>
+                </div>
+                <div class="job-actions">
+                    <button class="log-btn" onclick="event.stopPropagation(); openLog('${job.log_key}','stdout')" title="View stdout">out</button>
+                    <button class="log-btn log-btn-err" onclick="event.stopPropagation(); openLog('${job.log_key}','stderr')" title="View stderr">err</button>
+                    <button class="expand-btn" onclick="toggleJobExpand('${job.id}')" title="Toggle details">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
                     </button>
                 </div>
-            </td>
-            <td class="actions-col">
-                <button class="details-btn" onclick="openJobDetailsModal('${job.id}')" title="View details">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                    Details
-                </button>
-            </td>
-        </tr>`;
+            </div>
+            <div class="job-row-details" id="job-details-${job.id}">
+                <div class="job-details-loading">Loading details...</div>
+            </div>
+        </div>`;
     }).join('');
     updateBatchActionsVisibility('recent');
+}
+
+async function toggleJobExpand(jobId) {
+    const detailsEl = document.getElementById(`job-details-${jobId}`);
+    const rowEl = detailsEl?.closest('.job-row');
+    if (!detailsEl || !rowEl) return;
+
+    const isExpanded = rowEl.classList.contains('expanded');
+
+    if (isExpanded) {
+        rowEl.classList.remove('expanded');
+        expandedJobs.delete(jobId);
+    } else {
+        rowEl.classList.add('expanded');
+        expandedJobs.add(jobId);
+
+        // Load details if not already loaded
+        if (detailsEl.querySelector('.job-details-loading')) {
+            try {
+                const res = await fetch(`/api/job_details/${jobId}`);
+                const details = res.ok ? await res.json() : {};
+                const job = allRecentJobs.find(j => j.id === jobId) || allRunningJobs.find(j => j.id === jobId) || {};
+
+                detailsEl.innerHTML = `
+                    <div class="details-grid">
+                        <div class="detail-item">
+                            <span class="detail-label">Partition</span>
+                            <span class="detail-value">${job.partition || 'N/A'}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Runtime</span>
+                            <span class="detail-value">${job.elapsed || job.runtime || 'N/A'}</span>
+                        </div>
+                        ${details.exit_code ? `
+                        <div class="detail-item">
+                            <span class="detail-label">Exit Code</span>
+                            <span class="detail-value ${details.exit_code === '0' ? 'exit-success' : 'exit-error'}">${details.exit_code}</span>
+                        </div>` : ''}
+                        ${details.cpu_eff ? `
+                        <div class="detail-item">
+                            <span class="detail-label">CPU Eff.</span>
+                            <span class="detail-value">${details.cpu_eff}</span>
+                        </div>` : ''}
+                        ${details.mem_eff ? `
+                        <div class="detail-item">
+                            <span class="detail-label">Mem Eff.</span>
+                            <span class="detail-value">${details.mem_eff}</span>
+                        </div>` : ''}
+                        ${job.gres ? `
+                        <div class="detail-item">
+                            <span class="detail-label">Resources</span>
+                            <span class="detail-value">${job.gres}</span>
+                        </div>` : ''}
+                        ${details.end_time && details.end_time !== 'N/A' ? `
+                        <div class="detail-item">
+                            <span class="detail-label">Ended</span>
+                            <span class="detail-value">${details.end_time}</span>
+                        </div>` : ''}
+                    </div>
+                `;
+            } catch (err) {
+                console.error('Error loading job details:', err);
+                detailsEl.innerHTML = '<div class="details-error">Failed to load details</div>';
+            }
+        }
+    }
 }
 
 async function cancelJob(jobId) {

@@ -42,6 +42,7 @@
     --eff-bad: #f56565;
 
     --state-completed: #48bb78;
+    --state-running: #667eea;
     --state-pending: #ed8936;
     --state-failed: #f56565;
 
@@ -112,6 +113,7 @@
     --eff-bad: #ef4444;
 
     --state-completed: #22c55e;
+    --state-running: #818cf8;
     --state-pending: #f97316;
     --state-failed: #ef4444;
 
@@ -5180,91 +5182,71 @@ tr.batch-selected:hover {
 }
 
 /* ==========================================================================
-   Recent Jobs Table - Redesigned
+   Compact Job List - Expandable Rows
    ========================================================================== */
 
-.recent-jobs-table {
-    width: 100%;
-    border-collapse: separate;
-    border-spacing: 0;
+.compact-job-list {
+    display: flex;
+    flex-direction: column;
 }
 
-.recent-jobs-table thead th {
-    position: sticky;
-    top: 0;
-    background: var(--bg-secondary);
-    padding: 10px 12px;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-muted);
-    text-align: left;
+.job-row {
     border-bottom: 1px solid var(--border-color);
-    z-index: 1;
 }
 
-.recent-job-row {
-    transition: background-color 0.15s ease;
+.job-row:last-child {
+    border-bottom: none;
 }
 
-.recent-job-row:hover {
-    background: var(--bg-hover);
+.job-row.active-log {
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
-.recent-job-row.active-log {
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
+.job-row.batch-selected {
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
-.recent-job-row.batch-selected {
-    background: color-mix(in srgb, var(--accent) 20%, transparent);
+.job-row-main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    cursor: pointer;
+    transition: background 0.15s ease;
 }
 
-.recent-job-row td {
-    padding: 12px;
-    border-bottom: 1px solid var(--border-subtle);
-    vertical-align: middle;
+.job-row-main:hover {
+    background: var(--row-hover);
 }
 
-/* Select column */
-.recent-job-row .select-col {
-    width: 36px;
-    text-align: center;
-    padding-left: 8px;
-    padding-right: 4px;
+.job-checkbox {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
 }
 
-/* Updated column */
-.recent-job-row .updated-col {
-    width: 80px;
-    white-space: nowrap;
+.job-info {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    overflow: hidden;
 }
 
-.time-ago {
-    font-size: 12px;
-    color: var(--text-muted);
-    font-variant-numeric: tabular-nums;
-}
-
-/* Job name column */
-.recent-job-row .job-name-col {
-    min-width: 140px;
-    max-width: 280px;
-}
-
-.job-name-text {
-    display: block;
+.job-name {
     font-size: 13px;
     font-weight: 500;
     color: var(--text-primary);
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
-    margin-bottom: 4px;
+    max-width: 280px;
 }
 
 .job-state-badge {
-    display: inline-block;
+    flex-shrink: 0;
     padding: 2px 8px;
     border-radius: 10px;
     font-size: 10px;
@@ -5279,8 +5261,8 @@ tr.batch-selected:hover {
 }
 
 .job-state-badge.state-running {
-    background: color-mix(in srgb, var(--state-running) 20%, transparent);
-    color: var(--state-running);
+    background: color-mix(in srgb, var(--state-running, var(--accent)) 20%, transparent);
+    color: var(--state-running, var(--accent));
 }
 
 .job-state-badge.state-pending {
@@ -5296,23 +5278,63 @@ tr.batch-selected:hover {
     color: var(--state-failed);
 }
 
-/* Job ID column */
-.recent-job-row .job-id-col {
-    width: 110px;
-    white-space: nowrap;
-}
-
-.job-id-code {
+.job-id {
+    flex-shrink: 0;
     font-family: var(--font-mono);
-    font-size: 12px;
-    color: var(--text-secondary);
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 2px 6px;
     background: var(--bg-tertiary);
-    padding: 3px 7px;
     border-radius: 4px;
-    margin-right: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
 }
 
-.copy-id-btn {
+.job-id:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.job-time {
+    flex-shrink: 0;
+    font-size: 11px;
+    color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+}
+
+.job-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.log-btn {
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: 500;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+}
+
+.log-btn:hover {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.log-btn-err {
+    background: color-mix(in srgb, var(--state-failed) 12%, transparent);
+    color: var(--state-failed);
+}
+
+.log-btn-err:hover {
+    background: color-mix(in srgb, var(--state-failed) 22%, transparent);
+}
+
+.expand-btn {
     background: none;
     border: none;
     padding: 4px;
@@ -5320,84 +5342,97 @@ tr.batch-selected:hover {
     color: var(--text-muted);
     border-radius: 4px;
     transition: all 0.15s ease;
-    vertical-align: middle;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.copy-id-btn:hover {
+.expand-btn:hover {
     background: var(--bg-tertiary);
     color: var(--text-primary);
 }
 
-.copy-id-btn svg {
-    width: 14px;
-    height: 14px;
+.expand-btn svg {
+    transition: transform 0.2s ease;
+}
+
+.job-row.expanded .expand-btn svg {
+    transform: rotate(180deg);
+}
+
+/* Expandable details section */
+.job-row-details {
+    display: none;
+    padding: 0 12px 12px 44px;
+    background: var(--bg-secondary);
+}
+
+.job-row.expanded .job-row-details {
     display: block;
 }
 
-/* Logs column */
-.recent-job-row .logs-col {
-    width: 130px;
+.job-details-loading {
+    padding: 12px;
+    color: var(--text-muted);
+    font-size: 12px;
 }
 
-.log-btns {
+.details-error {
+    padding: 12px;
+    color: var(--state-failed);
+    font-size: 12px;
+}
+
+.details-grid {
     display: flex;
-    gap: 6px;
+    flex-wrap: wrap;
+    gap: 16px 24px;
+    padding: 12px 0;
 }
 
-.log-btn {
-    padding: 5px 10px;
-    font-size: 11px;
-    font-weight: 500;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
+.detail-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
 }
 
-.log-btn-stdout {
-    background: color-mix(in srgb, var(--accent) 15%, transparent);
-    color: var(--accent);
+.detail-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-faint);
 }
 
-.log-btn-stdout:hover {
-    background: color-mix(in srgb, var(--accent) 25%, transparent);
+.detail-value {
+    font-size: 13px;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
 }
 
-.log-btn-stderr {
-    background: color-mix(in srgb, var(--state-failed) 12%, transparent);
+.detail-value.exit-success {
+    color: var(--state-completed);
+}
+
+.detail-value.exit-error {
     color: var(--state-failed);
 }
 
-.log-btn-stderr:hover {
-    background: color-mix(in srgb, var(--state-failed) 22%, transparent);
-}
+/* Responsive */
+@media (max-width: 640px) {
+    .job-info {
+        flex-wrap: wrap;
+        gap: 6px;
+    }
 
-/* Actions column */
-.recent-job-row .actions-col {
-    width: 80px;
-    text-align: right;
-    padding-right: 16px;
-}
+    .job-name {
+        width: 100%;
+        max-width: none;
+    }
 
-.details-btn {
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    color: var(--text-secondary);
-    padding: 6px 12px;
-    font-size: 11px;
-    font-weight: 500;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.15s ease;
-}
-
-.details-btn:hover {
-    background: var(--bg-hover);
-    border-color: var(--accent);
-    color: var(--accent);
+    .job-time {
+        margin-left: auto;
+    }
 }
 
 /* ==========================================================================
@@ -5609,35 +5644,8 @@ tr.batch-selected:hover {
     }
 }
 
-/* Responsive adjustments for Recent Jobs table */
+/* Responsive adjustments for modals */
 @media (max-width: 768px) {
-    .recent-jobs-table thead th {
-        padding: 8px;
-        font-size: 10px;
-    }
-
-    .recent-job-row td {
-        padding: 10px 8px;
-    }
-
-    .recent-job-row .job-name-col {
-        max-width: 150px;
-    }
-
-    .job-name-text {
-        font-size: 12px;
-    }
-
-    .log-btns {
-        flex-direction: column;
-        gap: 4px;
-    }
-
-    .log-btn {
-        padding: 4px 8px;
-        font-size: 10px;
-    }
-
     .job-details-modal {
         width: 100%;
         max-width: 100%;

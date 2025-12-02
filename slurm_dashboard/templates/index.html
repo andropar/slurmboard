@@ -176,20 +176,8 @@
                     </div>
                 </div>
                 <div class="widget-content">
-                    <div class="table-scroll">
-                        <table id="recent-table" class="recent-jobs-table">
-                            <thead>
-                                <tr>
-                                    <th class="select-col"><input type="checkbox" id="select-all-recent" onchange="toggleSelectAll('recent', this.checked)" title="Select all"></th>
-                                    <th class="sortable" data-sort="updated">Updated</th>
-                                    <th class="job-col sortable" data-sort="name">Name</th>
-                                    <th>Job ID</th>
-                                    <th>Logs</th>
-                                    <th class="actions-col">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="recent-body"><tr><td colspan="6"><div class="empty-state">Loading…</div></td></tr></tbody>
-                        </table>
+                    <div class="compact-job-list" id="recent-body">
+                        <div class="empty-state">Loading...</div>
                     </div>
                 </div>
             </div>
