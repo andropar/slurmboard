@@ -3275,6 +3275,94 @@ button.copy-btn:hover { background: #38a169; }
 }
 
 /* ==========================================================================
+   Insights View - Full Page Analytics
+   ========================================================================== */
+
+.insights-view {
+    display: block;
+    height: calc(100vh - 60px);
+    overflow-y: auto;
+    background: var(--bg-secondary);
+}
+
+.insights-dashboard {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 24px 32px 48px;
+}
+
+.insights-header-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 24px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.insights-title-section {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.insights-main-title {
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+    letter-spacing: -0.02em;
+}
+
+.insights-subtitle {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin: 0;
+}
+
+/* Override insights-grid for full page view */
+.insights-view .insights-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 20px;
+}
+
+.insights-view .insight-card {
+    padding: 20px;
+    background: var(--bg-primary);
+    border-radius: 12px;
+}
+
+.insights-view .insight-icon {
+    font-size: 32px;
+}
+
+.insights-view .insight-title {
+    font-size: 14px;
+    margin-bottom: 12px;
+}
+
+.insights-view .efficiency-grade {
+    font-size: 48px;
+}
+
+.insights-view .efficiency-label {
+    font-size: 18px;
+}
+
+.insights-view .resource-value {
+    font-size: 1.5rem;
+}
+
+.insights-view .stats-card-grid {
+    gap: 1.5rem;
+}
+
+.insights-view .stats-card-value {
+    font-size: 2rem;
+}
+
+/* ==========================================================================
    Heatmap Dashboard - Activity Analytics View
    ========================================================================== */
 

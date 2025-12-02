@@ -2106,11 +2106,13 @@ function setView(view) {
     document.getElementById('view-timeline-btn').classList.toggle('active', view === 'timeline');
     document.getElementById('view-dag-btn').classList.toggle('active', view === 'dag');
     document.getElementById('view-heatmap-btn').classList.toggle('active', view === 'heatmap');
+    document.getElementById('view-insights-btn').classList.toggle('active', view === 'insights');
 
     document.querySelector('.layout').style.display = view === 'table' ? 'grid' : 'none';
     document.getElementById('timeline-view').style.display = view === 'timeline' ? 'flex' : 'none';
     document.getElementById('dag-view').style.display = view === 'dag' ? 'flex' : 'none';
     document.getElementById('heatmap-view').style.display = view === 'heatmap' ? 'flex' : 'none';
+    document.getElementById('insights-view').style.display = view === 'insights' ? 'flex' : 'none';
 
     if (view === 'timeline') {
         loadTimelineData();
@@ -2118,6 +2120,8 @@ function setView(view) {
         loadDagData();
     } else if (view === 'heatmap') {
         loadHeatmapData();
+    } else if (view === 'insights') {
+        loadInsights();
     }
 }
 
@@ -2863,14 +2867,8 @@ async function loadInsights() {
 
 function renderInsights() {
     const content = document.getElementById('insights-content');
-    const panel = document.getElementById('insights-panel');
 
     if (!content || !insightsData) return;
-
-    // Handle collapsed/minimized state
-    if (insightsCollapsed || panel.classList.contains('widget-minimized')) {
-        return;
-    }
 
     // Check if we have any data
     if (!insightsData.job_stats || insightsData.job_stats.total_jobs === 0) {
@@ -2878,7 +2876,7 @@ function renderInsights() {
         return;
     }
 
-    let html = '<div class="insights-grid">';
+    let html = '';
 
     // Efficiency Score Card
     if (insightsData.efficiency_score) {
@@ -3035,10 +3033,8 @@ function renderInsights() {
         }
     }
 
-    html += '</div>';
-
     // If no insights to show
-    if (html === '<div class="insights-grid"></div>') {
+    if (html === '') {
         html = '<div class="insights-empty">No recommendations at this time. Keep submitting jobs to get personalized insights!</div>';
     }
 
@@ -4449,9 +4445,7 @@ restoreLayoutState();
 
 // Initialize
 fetchJobs();
-loadInsights(); // Load insights on startup
 loadSavedSearches(); // Load saved searches
 loadFiltersFromUrl(); // Load filters from URL
 setInterval(fetchJobs, 8000);
 setInterval(updateExpandedJobResources, 30000); // Update resources every 30 seconds
-setInterval(loadInsights, 300000); // Refresh insights every 5 minutes

@@ -12,12 +12,6 @@
             <span class="last-updated-value" id="last-updated">–</span>
         </div>
         <div class="header-controls">
-            <div class="layout-selector">
-                <button class="layout-btn" data-layout="default" onclick="setLayout('default')" title="Default layout">Default</button>
-                <button class="layout-btn active" data-layout="monitoring" onclick="setLayout('monitoring')" title="Focus on job tables">Monitor</button>
-                <button class="layout-btn" data-layout="debugging" onclick="setLayout('debugging')" title="Focus on logs">Debug</button>
-                <button class="layout-btn" data-layout="compact" onclick="setLayout('compact')" title="Compact view">Compact</button>
-            </div>
             <button class="quick-submit-btn" onclick="openSubmitModal()" title="Submit new job (Ctrl+N)">+ Submit</button>
             <button class="templates-btn" onclick="openTemplateModal()" title="Manage templates">Templates</button>
             <div class="view-toggle">
@@ -36,6 +30,10 @@
                 <button class="view-btn" id="view-heatmap-btn" onclick="setView('heatmap')" title="Activity heatmaps">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
                     Heatmap
+                </button>
+                <button class="view-btn" id="view-insights-btn" onclick="setView('insights')" title="Job insights & analytics">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/><path d="M12 2a10 10 0 0 1 10 10"/></svg>
+                    Insights
                 </button>
             </div>
             <div class="search-wrapper">
@@ -121,19 +119,8 @@
             <span class="filter-count" id="filter-count">Showing all jobs</span>
         </div>
     </div>
-    <div class="layout" id="dashboard-layout" data-layout="monitoring">
+    <div class="layout" id="dashboard-layout" data-layout="default">
         <div class="table-column" id="table-column">
-            <div class="card widget insights-panel" id="insights-panel" data-widget="insights">
-                <div class="widget-header insights-header">
-                    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/><path d="M12 2a10 10 0 0 1 10 10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>Insights</h2>
-                    <div class="widget-controls">
-                        <button class="widget-minimize" onclick="toggleWidgetMinimize('insights-panel')" title="Minimize">−</button>
-                    </div>
-                </div>
-                <div class="widget-content insights-content" id="insights-content">
-                    <div class="insights-loading">Analyzing job history...</div>
-                </div>
-            </div>
             <div class="card widget running-wrapper" id="running-panel" data-widget="running">
                 <div class="widget-header table-header-row">
                     <div class="table-header-left">
@@ -409,6 +396,19 @@
                         <div class="heatmap-loading">Loading...</div>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+    <div class="insights-view" id="insights-view" style="display: none;">
+        <div class="insights-dashboard">
+            <div class="insights-header-bar">
+                <div class="insights-title-section">
+                    <h1 class="insights-main-title">Job Insights</h1>
+                    <p class="insights-subtitle">Resource usage analysis and recommendations</p>
+                </div>
+            </div>
+            <div class="insights-grid" id="insights-content">
+                <div class="insights-loading">Analyzing job history...</div>
             </div>
         </div>
     </div>
