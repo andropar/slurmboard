@@ -81,15 +81,15 @@ def get_running_jobs(user: str) -> list[dict]:
     return rows
 
 
-def get_job_states_batch(job_ids: list[str], user: str) -> dict[str, str]:
-    """Get states for multiple jobs in a single sacct query.
+def get_job_metadata_batch(job_ids: list[str], user: str) -> dict[str, dict]:
+    """Get metadata for multiple jobs in a single sacct query.
 
     Args:
         job_ids: List of job IDs to query
         user: Username to filter by
 
     Returns:
-        Dictionary mapping job_id to state string
+        Dictionary mapping job_id to metadata dict with state, partition, gres, elapsed
     """
     if not job_ids:
         return {}
@@ -105,7 +105,8 @@ def get_job_states_batch(job_ids: list[str], user: str) -> dict[str, str]:
                 "-u",
                 user,
                 "--noheader",
-                "--format=JobID,State",
+                "--format=JobID,State,Partition,AllocGRES,Elapsed",
+                "--parsable2",
                 "-X",  # Only show main job entries, not steps
             ],
             capture_output=True,
@@ -119,17 +120,21 @@ def get_job_states_batch(job_ids: list[str], user: str) -> dict[str, str]:
     if proc.returncode != 0:
         return {}
 
-    states = {}
+    metadata = {}
     for line in proc.stdout.strip().splitlines():
-        parts = line.split()
-        if len(parts) >= 2:
+        parts = line.split("|")
+        if len(parts) >= 5:
             job_id = parts[0].strip()
-            state = parts[1].strip()
             # Handle job IDs that might have array indices (e.g., "12345_0")
             base_id = job_id.split("_")[0]
-            states[base_id] = state
+            metadata[base_id] = {
+                "state": parts[1].strip(),
+                "partition": parts[2].strip(),
+                "gres": parts[3].strip(),
+                "elapsed": parts[4].strip(),
+            }
 
-    return states
+    return metadata
 
 
 def get_job_details(job_id: str, user: str) -> dict:

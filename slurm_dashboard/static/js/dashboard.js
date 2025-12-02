@@ -1618,8 +1618,9 @@ function matchesQuickFilter(job, filter) {
                    name.includes('gpu');
         case 'long':
             // Jobs running > 1 hour; if no runtime info, don't filter out
-            if (!job.runtime) return false;
-            const runtime = parseRuntimeToMinutes(job.runtime);
+            const runtimeStr = job.runtime || job.elapsed;
+            if (!runtimeStr) return false;
+            const runtime = parseRuntimeToMinutes(runtimeStr);
             return runtime >= 60;
         case 'pending':
             if (!job.state) return false;
