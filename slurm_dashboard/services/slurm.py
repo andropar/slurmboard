@@ -1861,12 +1861,11 @@ def get_cost_data(user: str, days: int = 30) -> dict:
         # Parse elapsed time to hours
         elapsed_hours = _parse_time_to_seconds(elapsed_str) / 3600
 
-        # Calculate service units (SUs)
-        # Formula: CPU-hours + GPU-hours * 10 (GPUs are more expensive)
-        gpu_multiplier = 10
-        sus = (cpus * elapsed_hours) + (gpus * elapsed_hours * gpu_multiplier)
+        # Calculate resource hours
+        cpu_hours = cpus * elapsed_hours
+        gpu_hours = gpus * elapsed_hours
 
-        if sus <= 0:
+        if cpu_hours <= 0 and gpu_hours <= 0:
             continue
 
         # Parse start date
@@ -1874,11 +1873,17 @@ def get_cost_data(user: str, days: int = 30) -> dict:
             try:
                 start_dt = datetime.strptime(start_str[:10], "%Y-%m-%d")
                 date_key = start_dt.strftime("%Y-%m-%d")
-                daily_usage[date_key] += sus
+                if date_key not in daily_usage:
+                    daily_usage[date_key] = {"cpu_hours": 0, "gpu_hours": 0}
+                daily_usage[date_key]["cpu_hours"] += cpu_hours
+                daily_usage[date_key]["gpu_hours"] += gpu_hours
             except ValueError:
                 pass
 
-        partition_usage[partition] += sus
+        if partition not in partition_usage:
+            partition_usage[partition] = {"cpu_hours": 0, "gpu_hours": 0}
+        partition_usage[partition]["cpu_hours"] += cpu_hours
+        partition_usage[partition]["gpu_hours"] += gpu_hours
 
         jobs_data.append({
             "job_id": job_id,
@@ -1887,16 +1892,18 @@ def get_cost_data(user: str, days: int = 30) -> dict:
             "cpus": cpus,
             "gpus": gpus,
             "elapsed_hours": round(elapsed_hours, 2),
-            "sus": round(sus, 1),
+            "cpu_hours": round(cpu_hours, 1),
+            "gpu_hours": round(gpu_hours, 1),
             "state": state,
         })
 
-    # Sort jobs by SU cost
-    jobs_data.sort(key=lambda x: x["sus"], reverse=True)
+    # Sort jobs by total resource hours (cpu + gpu)
+    jobs_data.sort(key=lambda x: x["cpu_hours"] + x["gpu_hours"], reverse=True)
     top_jobs = jobs_data[:10]
 
     # Calculate totals
-    total_sus = sum(j["sus"] for j in jobs_data)
+    total_cpu_hours = sum(j["cpu_hours"] for j in jobs_data)
+    total_gpu_hours = sum(j["gpu_hours"] for j in jobs_data)
 
     # Fill in missing dates
     end_date = datetime.now()
@@ -1906,38 +1913,45 @@ def get_cost_data(user: str, days: int = 30) -> dict:
 
     while current <= end_date:
         date_key = current.strftime("%Y-%m-%d")
+        day_data = daily_usage.get(date_key, {"cpu_hours": 0, "gpu_hours": 0})
         daily_list.append({
             "date": date_key,
-            "sus": round(daily_usage.get(date_key, 0), 1),
+            "cpu_hours": round(day_data["cpu_hours"], 1),
+            "gpu_hours": round(day_data["gpu_hours"], 1),
         })
         current += timedelta(days=1)
 
-    # Calculate projections
-    active_days = len([d for d in daily_list if d["sus"] > 0])
+    # Calculate daily averages
+    active_days = len([d for d in daily_list if d["cpu_hours"] > 0 or d["gpu_hours"] > 0])
     if active_days > 0:
-        daily_avg = total_sus / active_days
-        # Project to end of month
-        days_remaining = (end_date.replace(day=28) + timedelta(days=4)).replace(day=1) - end_date
-        days_remaining = days_remaining.days
-        projected_additional = daily_avg * days_remaining
-        projected_total = total_sus + projected_additional
+        daily_avg_cpu = total_cpu_hours / active_days
+        daily_avg_gpu = total_gpu_hours / active_days
     else:
-        daily_avg = 0
-        projected_total = 0
+        daily_avg_cpu = 0
+        daily_avg_gpu = 0
 
     # Partition breakdown
     partition_list = [
-        {"partition": p, "sus": round(s, 1)}
-        for p, s in sorted(partition_usage.items(), key=lambda x: x[1], reverse=True)
+        {
+            "partition": p,
+            "cpu_hours": round(usage["cpu_hours"], 1),
+            "gpu_hours": round(usage["gpu_hours"], 1),
+        }
+        for p, usage in sorted(
+            partition_usage.items(),
+            key=lambda x: x[1]["cpu_hours"] + x[1]["gpu_hours"],
+            reverse=True
+        )
     ]
 
     return {
-        "total_sus": round(total_sus, 1),
+        "total_cpu_hours": round(total_cpu_hours, 1),
+        "total_gpu_hours": round(total_gpu_hours, 1),
         "daily_usage": daily_list,
-        "daily_avg": round(daily_avg, 1),
+        "daily_avg_cpu": round(daily_avg_cpu, 1),
+        "daily_avg_gpu": round(daily_avg_gpu, 1),
         "top_jobs": top_jobs,
         "by_partition": partition_list,
-        "projected_total": round(projected_total, 1),
         "days": days,
         "job_count": len(jobs_data),
     }

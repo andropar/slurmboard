@@ -1787,11 +1787,11 @@ function formatStateShort(state) {
     return s.split('+')[0].slice(0, 4);
 }
 
-function formatSUs(sus) {
-    if (sus === undefined || sus === null) return '0';
-    if (sus >= 1000000) return (sus / 1000000).toFixed(1) + 'M';
-    if (sus >= 1000) return (sus / 1000).toFixed(1) + 'K';
-    return sus.toFixed(1);
+function formatHours(hours) {
+    if (hours === undefined || hours === null) return '0';
+    if (hours >= 1000000) return (hours / 1000000).toFixed(1) + 'M';
+    if (hours >= 1000) return (hours / 1000).toFixed(1) + 'K';
+    return hours.toFixed(1);
 }
 
 function renderRunning(rows) {
@@ -2954,30 +2954,35 @@ function renderInsights() {
         `;
     }
 
-    // Cost/Usage Card
-    if (costData && costData.total_sus !== undefined) {
-        const dailyAvg = costData.daily_avg || 0;
-        const projected = costData.projected_total || costData.total_sus;
+    // Resource Hours Card
+    if (costData && (costData.total_cpu_hours !== undefined || costData.total_gpu_hours !== undefined)) {
+        const cpuHours = costData.total_cpu_hours || 0;
+        const gpuHours = costData.total_gpu_hours || 0;
         html += `
-            <div class="insight-card cost-card">
-                <div class="insight-icon">💰</div>
+            <div class="insight-card resource-card">
+                <div class="insight-icon">⏱️</div>
                 <div class="insight-content">
-                    <div class="insight-title">Cost & Usage (30 days)</div>
-                    <div class="cost-grid">
-                        <div class="cost-item">
-                            <span class="cost-value">${formatSUs(costData.total_sus)}</span>
-                            <span class="cost-label">Total SUs</span>
+                    <div class="insight-title">Resource Hours (30 days)</div>
+                    <div class="resource-grid">
+                        <div class="resource-item">
+                            <span class="resource-value">${formatHours(cpuHours)}</span>
+                            <span class="resource-label">CPU Hours</span>
                         </div>
-                        <div class="cost-item">
-                            <span class="cost-value">${formatSUs(dailyAvg)}</span>
-                            <span class="cost-label">Daily Avg</span>
+                        ${gpuHours > 0 ? `
+                        <div class="resource-item">
+                            <span class="resource-value">${formatHours(gpuHours)}</span>
+                            <span class="resource-label">GPU Hours</span>
                         </div>
+                        ` : ''}
                     </div>
                     ${costData.by_partition && costData.by_partition.length > 0 ? `
-                        <div class="cost-breakdown">
-                            ${costData.by_partition.slice(0, 3).map(item =>
-                                `<span class="cost-partition"><span class="partition-name">${item.partition}</span>: ${formatSUs(item.sus)}</span>`
-                            ).join('')}
+                        <div class="resource-breakdown">
+                            ${costData.by_partition.slice(0, 3).map(item => {
+                                const parts = [];
+                                if (item.cpu_hours > 0) parts.push(`${formatHours(item.cpu_hours)} CPU`);
+                                if (item.gpu_hours > 0) parts.push(`${formatHours(item.gpu_hours)} GPU`);
+                                return `<span class="resource-partition"><span class="partition-name">${item.partition}</span>: ${parts.join(', ')}</span>`;
+                            }).join('')}
                         </div>
                     ` : ''}
                 </div>

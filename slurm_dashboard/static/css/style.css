@@ -3912,38 +3912,38 @@ button.copy-btn:hover { background: #38a169; }
    Cost & Usage Display
    ========================================================================== */
 
-/* Cost Card in Insights */
-.cost-card {
+/* Resource Hours Card in Insights */
+.resource-card {
     border-left: 4px solid var(--accent);
 }
 
-.cost-grid {
+.resource-grid {
     display: flex;
     gap: 1.5rem;
     margin: 0.5rem 0;
 }
 
-.cost-item {
+.resource-item {
     display: flex;
     flex-direction: column;
     gap: 0.125rem;
 }
 
-.cost-value {
+.resource-value {
     font-size: 1.25rem;
     font-weight: 700;
     color: var(--accent);
     font-variant-numeric: tabular-nums;
 }
 
-.cost-label {
+.resource-label {
     font-size: 0.7rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--text-muted);
 }
 
-.cost-breakdown {
+.resource-breakdown {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
@@ -3952,7 +3952,7 @@ button.copy-btn:hover { background: #38a169; }
     border-top: 1px solid var(--border-color);
 }
 
-.cost-partition {
+.resource-partition {
     font-size: 0.75rem;
     color: var(--text-muted);
     background: var(--bg-tertiary);
@@ -3960,20 +3960,9 @@ button.copy-btn:hover { background: #38a169; }
     border-radius: 4px;
 }
 
-.cost-partition .partition-name {
+.resource-partition .partition-name {
     font-weight: 600;
     color: var(--text-secondary);
-}
-
-/* Per-job cost in details row */
-.cost-detail {
-    border-left: 2px solid var(--accent);
-    padding-left: 0.75rem;
-}
-
-.cost-detail .cost-value {
-    font-size: 1rem;
-    font-weight: 600;
 }
 
 /* ==========================================================================
