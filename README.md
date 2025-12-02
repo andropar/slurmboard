@@ -2,6 +2,8 @@
 
 A lightweight, real-time web dashboard for monitoring Slurm HPC cluster jobs. View logs, track resource usage, analyze job patterns, and manage your workloads from a clean, modern interface.
 
+![Dashboard Overview](docs/images/dashboard-main.png)
+
 ## Features
 
 - **Real-time job monitoring** - Live log streaming with auto-refresh
@@ -11,6 +13,40 @@ A lightweight, real-time web dashboard for monitoring Slurm HPC cluster jobs. Vi
 - **Resource tracking** - CPU/GPU hours, memory efficiency, partition health
 - **Analytics dashboard** - Job patterns, peak hours, failure analysis
 - **Batch operations** - Select multiple jobs for cancel/resubmit/export
+- **Dark mode** - Easy on the eyes during those late-night debugging sessions
+
+## Screenshots
+
+<table>
+<tr>
+<td width="50%">
+
+**Job List & Logs**
+![Job List](docs/images/jobs-logs.png)
+
+</td>
+<td width="50%">
+
+**Insights Dashboard**
+![Insights](docs/images/insights.png)
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**Timeline View**
+![Timeline](docs/images/timeline.png)
+
+</td>
+<td width="50%">
+
+**Heatmap View**
+![Heatmap](docs/images/heatmap.png)
+
+</td>
+</tr>
+</table>
 
 ## Installation
 
@@ -177,7 +213,7 @@ slurm-dashboard --log-root ~/slurm-logs
 
 ### Table View (Default)
 - Running jobs with real-time status
-- Recent jobs from log files
+- Recent jobs with expandable details
 - Click any job to view its logs
 - Quick filters for state, partition, GPU usage
 
