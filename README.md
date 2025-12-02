@@ -35,14 +35,11 @@ A lightweight, real-time web dashboard for monitoring Slurm HPC cluster jobs. Vi
 <tr>
 <td width="50%">
 
-**Timeline View**
-![Timeline](docs/images/timeline.png)
+**Heatmap View**
+![Heatmap](docs/images/heatmap.png)
 
 </td>
 <td width="50%">
-
-**Heatmap View**
-![Heatmap](docs/images/heatmap.png)
 
 </td>
 </tr>
