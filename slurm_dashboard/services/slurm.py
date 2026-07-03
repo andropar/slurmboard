@@ -43,10 +43,20 @@ def parse_gpu_count(gres_str: str) -> int:
     if not gres_str:
         return 0
 
-    # Match patterns like: gpu:2, gpu=2, gres/gpu=2, gres/gpu:a100=4
-    match = re.search(r'gpu[^=:,]*[=:](\d+)', gres_str.lower())
-    if match:
-        return int(match.group(1))
+    for token in gres_str.lower().split(","):
+        token = token.strip()
+        if "gpu" not in token:
+            continue
+
+        if "=" in token:
+            _, value = token.rsplit("=", maxsplit=1)
+            if value.isdigit():
+                return int(value)
+
+        for part in reversed(token.split(":")):
+            if part.isdigit():
+                return int(part)
+
     return 0
 
 

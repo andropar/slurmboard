@@ -1,8 +1,22 @@
 # Slurm Dashboard
 
+[![PyPI version](https://img.shields.io/pypi/v/slurm-dashboard.svg)](https://pypi.org/project/slurm-dashboard/)
+[![Python versions](https://img.shields.io/pypi/pyversions/slurm-dashboard.svg)](https://pypi.org/project/slurm-dashboard/)
+
 A lightweight, real-time web dashboard for monitoring Slurm HPC cluster jobs. View logs, track resource usage, analyze job patterns, and manage your workloads from a clean, modern interface.
 
 ![Dashboard Overview](https://raw.githubusercontent.com/andropar/slurmboard/main/docs/images/dashboard-main.png)
+
+## At a Glance
+
+Slurm Dashboard is a small Flask app and CLI for researchers and ML engineers who run batches of experiments on Slurm clusters. It brings queue state, logs, resource usage, and job history into one browser view so long-running training or analysis jobs are easier to debug.
+
+- Tracks live and historical jobs through Slurm's `squeue` and `sacct` commands
+- Streams stdout/stderr from configurable cluster log layouts
+- Surfaces failure patterns, resource efficiency, GPU usage, and submission activity
+- Ships as a PyPI package with a `slurm-dashboard` command-line entry point
+
+The project is intentionally lightweight: no database, no cluster daemon, and no scheduler-side service. It can run on a login node behind an SSH tunnel and read the same Slurm state a user can already access from the shell.
 
 ## Installation
 
