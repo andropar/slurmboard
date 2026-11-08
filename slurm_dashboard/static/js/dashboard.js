@@ -405,7 +405,7 @@ function exitCompareMode() {
     selectedForCompare.clear();
 
     // Restore normal view
-    document.getElementById('log-wrapper').style.display = 'flex';
+    logPanel.parentElement.style.display = 'flex';
     const compareView = document.getElementById('compare-view');
     if (compareView) compareView.remove();
 
@@ -416,7 +416,7 @@ function exitCompareMode() {
 
 function renderCompareView() {
     // Hide normal log panel
-    document.getElementById('log-wrapper').style.display = 'none';
+    logPanel.parentElement.style.display = 'none';
 
     // Create comparison view
     let compareView = document.getElementById('compare-view');
@@ -808,7 +808,7 @@ function renderErrorSummary() {
     summary.innerHTML = html;
 
     // Insert before log panel
-    const logWrapper = document.getElementById('log-wrapper');
+    const logWrapper = logPanel.parentElement;
     logWrapper.insertBefore(summary, logPanel);
 }
 
@@ -2110,7 +2110,7 @@ document.addEventListener('keydown', (e) => {
     }
     // Ctrl+F or Cmd+F in log panel area focuses log search
     if ((e.key === 'f' || e.key === 'F') && (e.ctrlKey || e.metaKey)) {
-        const logWrapper = document.getElementById('log-wrapper');
+        const logWrapper = logPanel.parentElement;
         if (logWrapper && logWrapper.contains(document.activeElement)) {
             e.preventDefault();
             logSearchInput.focus();

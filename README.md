@@ -279,6 +279,9 @@ FLASK_DEBUG=1 slurm-dashboard
 
 # Run tests
 pytest
+
+# Run frontend log regression tests (requires Node.js 18+; no npm dependencies)
+node --test tests/dashboard_logs.test.cjs
 ```
 
 ## License
