@@ -5456,6 +5456,29 @@ tr.batch-selected:hover {
     max-width: 280px;
 }
 
+.job-row.expanded .job-row-main {
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr);
+    align-items: start;
+}
+
+.job-row.expanded .job-info {
+    flex-wrap: wrap;
+}
+
+.job-row.expanded .job-name {
+    flex-basis: 100%;
+    min-width: 0;
+    max-width: none;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.job-row.expanded .job-actions {
+    grid-column: 2;
+    flex-wrap: wrap;
+}
+
 .job-state-badge {
     flex-shrink: 0;
     padding: 2px 8px;

@@ -252,6 +252,12 @@ slurm-dashboard --log-root ~/slurm-logs
 
 ## Troubleshooting
 
+### Reading long recent-job names
+
+Expand a recent job by clicking its name or chevron to read the full name.
+Expanded names wrap, including names without spaces on narrow screens, and are
+visible while details load or if loading fails. Collapsed rows stay compact.
+
 ### Viewing submitted batch scripts
 
 Use **script** next to a running or recent job's log buttons, or **View submitted
