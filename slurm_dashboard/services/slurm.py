@@ -640,6 +640,97 @@ def parse_scontrol_output(output: str) -> dict:
     }
 
 
+def get_submitted_script(job_id: str, user: str, max_lines: int = 200) -> dict:
+    """Read Slurm's stored script, never the mutable submission source file."""
+    if not re.fullmatch(r"[0-9]+(?:_[0-9]+)?", job_id):
+        return {"error": "Invalid job ID", "status": "invalid"}
+
+    attempts = []
+    commands = [
+        ("controller", ["scontrol", "write", "batch_script", job_id, "-"]),
+        ("accounting", ["sacct", "--batch-script", "-j", job_id, "-u", user, "--noheader"]),
+    ]
+    for source, command in commands:
+        try:
+            proc = subprocess.run(
+                command, capture_output=True, text=True, timeout=10, check=False,
+            )
+        except FileNotFoundError:
+            attempts.append({"source": source, "status": "unsupported",
+                             "message": f"{command[0]} is not installed."})
+            continue
+        except subprocess.TimeoutExpired:
+            attempts.append({"source": source, "status": "timeout",
+                             "message": f"{command[0]} timed out retrieving the script."})
+            continue
+        except OSError as exc:
+            attempts.append({"source": source, "status": "error", "message": str(exc)})
+            continue
+
+        if proc.returncode == 0:
+            content = proc.stdout
+            # Some sacct versions include a per-job heading even with --noheader.
+            if source == "accounting":
+                content = re.sub(
+                    rf"\ABatch Script for Job {re.escape(job_id)}\s*\n", "", content,
+                    count=1, flags=re.IGNORECASE,
+                )
+            if content.strip() and content.strip() != "NONE":
+                lines = content.splitlines(keepends=True)
+                preview = "".join(lines[:max_lines])
+                byte_limit = 1024 * 1024
+                encoded = preview.encode("utf-8")
+                return {
+                    "job_id": job_id, "source": source, "status": "available",
+                    "content": encoded[:byte_limit].decode("utf-8", errors="ignore"),
+                    "truncated": len(lines) > max_lines or len(encoded) > byte_limit,
+                    "max_lines": max_lines, "max_bytes": byte_limit,
+                }
+            attempts.append({"source": source, "status": "unavailable",
+                             "message": "Slurm returned no stored batch script."})
+            continue
+
+        message = (proc.stderr or proc.stdout).strip()[:2000]
+        lower = message.lower()
+        if any(term in lower for term in (
+            "permission", "access denied", "access/permission denied",
+            "not authorized", "not permitted", "invalid user",
+        )):
+            status = "forbidden"
+        elif any(term in lower for term in (
+            "unrecognized", "unknown option", "invalid option", "invalid keyword",
+            "not supported",
+        )):
+            status = "unsupported"
+        elif any(term in lower for term in (
+            "invalid job", "not found", "no script", "not available", "job_script",
+        )):
+            status = "unavailable"
+        else:
+            status = "error"
+        attempts.append({"source": source, "status": status,
+                         "message": message or f"{command[0]} exited with {proc.returncode}."})
+
+    statuses = {attempt["status"] for attempt in attempts}
+    status = next((value for value in ("forbidden", "error", "timeout")
+                   if value in statuses), "unavailable")
+    if statuses == {"unsupported"}:
+        status = "unsupported"
+    return {
+        "job_id": job_id, "status": status, "attempts": attempts,
+        "error": {
+            "forbidden": "Access denied to the submitted script by Slurm.",
+            "error": "Slurm could not retrieve the submitted script.",
+            "timeout": "Slurm timed out retrieving the submitted script.",
+            "unsupported": "Submitted-script retrieval is not supported by these Slurm clients.",
+            "unavailable": (
+                "Submitted script unavailable: the job may have been purged, have no batch "
+                "script, or accounting may not have stored it."
+            ),
+        }[status],
+    }
+
+
 def get_script_content(script_path: str, max_lines: int = 200) -> dict:
     """
     Read the content of a job submission script.

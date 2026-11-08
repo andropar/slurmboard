@@ -25,6 +25,7 @@ from slurm_dashboard.services.slurm import (
     get_queue_info,
     get_running_jobs,
     get_script_content,
+    get_submitted_script,
     predict_job_completion,
     resubmit_job,
     submit_job,
@@ -184,6 +185,22 @@ def job_submit_info(job_id: str) -> Response:
     config = get_config()
     info = get_job_submit_info(job_id, config.user)
     return jsonify(info)
+
+
+@api.route("/submitted_script/<job_id>")
+def submitted_script(job_id: str) -> Response:
+    """Retrieve the submitted copy retained by Slurm, not a source path."""
+    config = get_config()
+    result = get_submitted_script(job_id, config.user)
+    status_code = {
+        "available": 200,
+        "invalid": 400, "forbidden": 403, "unavailable": 404,
+        "unsupported": 501, "error": 502, "timeout": 504,
+    }[result["status"]]
+    response = jsonify(result)
+    response.status_code = status_code
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @api.route("/script_content")
