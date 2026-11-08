@@ -647,13 +647,16 @@ def get_submitted_script(job_id: str, user: str, max_lines: int = 200) -> dict:
 
     attempts = []
     commands = [
-        ("controller", ["scontrol", "write", "batch_script", job_id, "-"]),
+        # Slurm documents write batch_script as an interactive-only command.
+        ("controller", ["scontrol", "--quiet"]),
         ("accounting", ["sacct", "--batch-script", "-j", job_id, "-u", user, "--noheader"]),
     ]
     for source, command in commands:
         try:
             proc = subprocess.run(
-                command, capture_output=True, text=True, timeout=10, check=False,
+                command,
+                input=f"write batch_script {job_id} -\n" if source == "controller" else None,
+                capture_output=True, text=True, timeout=10, check=False,
             )
         except FileNotFoundError:
             attempts.append({"source": source, "status": "unsupported",

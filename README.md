@@ -260,9 +260,11 @@ the current file named in the submission command. Changing or deleting that
 source file does not change Slurm's retained copy. The viewer does not submit,
 cancel, or modify jobs, and leaves log streams running.
 
-The dashboard first uses `scontrol write batch_script JOB_ID -` to read the
-controller's retained copy to stdout without writing a file. Once the controller
-has purged the job, it tries `sacct --batch-script -j JOB_ID --noheader`.
+The dashboard first sends `write batch_script JOB_ID -` to the `scontrol`
+interactive command reader. Slurm documents this command for interactive use;
+the dashboard pipes it to `scontrol --quiet` and reads the controller's retained
+copy from stdout without writing a file. It then tries
+`sacct --batch-script -j JOB_ID --noheader` as a fallback.
 Historical retrieval requires a supported Slurm version and
 `AccountingStoreFlags=job_script` to have been enabled when the job ran; the
 dashboard does not enable it. Access uses the dashboard process's Slurm identity;

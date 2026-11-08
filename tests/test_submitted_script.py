@@ -29,7 +29,8 @@ def test_controller_copy_is_not_mutable_source(run, tmp_path):
     assert data["content"] == submitted
     assert data["source"] == "controller"
     assert data["truncated"] is False
-    assert run.call_args.args[0] == ["scontrol", "write", "batch_script", "123", "-"]
+    assert run.call_args.args[0] == ["scontrol", "--quiet"]
+    assert run.call_args.kwargs["input"] == "write batch_script 123 -\n"
     assert run.call_count == 1
 
 
@@ -75,7 +76,8 @@ def test_failures_are_explicit(run, failure, expected):
 def test_array_task_id_is_passed_unchanged(run):
     run.return_value = result("#!/bin/bash\necho array\n")
     assert get_submitted_script("123_4", "alice")["status"] == "available"
-    assert run.call_args.args[0][-2:] == ["123_4", "-"]
+    assert run.call_args.args[0] == ["scontrol", "--quiet"]
+    assert run.call_args.kwargs["input"] == "write batch_script 123_4 -\n"
 
 
 @pytest.mark.parametrize("job_id", ["--help", "123;echo bad", "１２３", "123.batch", "123_[1-5]"])
