@@ -26,7 +26,7 @@ pip install slurm-dashboard
 
 ## Features
 
-- **Real-time job monitoring** - Live log streaming with auto-refresh
+- **Real-time job monitoring** - Live log streaming with auto-refresh; logs open in a pop-up (close with ×, Esc, or a backdrop click) so job lists keep the full width
 - **Multiple views** - Table, Timeline, Pipeline DAG, Heatmap, and Insights
 - **Job management** - Submit, cancel, and resubmit jobs with templates
 - **Submitted scripts** - View the batch script retained by Slurm from each job's `script` button
