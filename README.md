@@ -218,6 +218,33 @@ slurm-dashboard --log-root ~/slurm-logs
 # Ctrl+B, D to detach
 ```
 
+### Restarting a Remote Dashboard
+
+`scripts/restart-remote-dashboard.sh` restarts a dashboard that runs in a
+tmux session on a cluster host, and waits until it answers HTTP requests. Run
+it from your workstation:
+
+```bash
+# Restart only
+scripts/restart-remote-dashboard.sh
+
+# Install a git ref, then restart
+git fetch origin
+scripts/restart-remote-dashboard.sh --ref origin/main
+```
+
+With `--ref`, the script builds a wheel locally from that commit, copies it
+to the host and installs it offline with `--no-deps`. The cluster does not
+need GitHub access. The script records the deployed commit in the
+virtualenv and prints the previous one, so you can roll back with
+`--ref <previous commit>`.
+
+The defaults match the `agent_3d` deployment: host `agent_3d`, virtualenv
+`~/LiteReality-Agent/.venv`, tmux session `ttsd-slurm-dashboard`, port 8787.
+Override them with options or `SLURMBOARD_*` environment variables; see
+`--help`. The script refuses to start if the port is in use outside the tmux
+session. It never submits, cancels or modifies Slurm jobs.
+
 ## Views
 
 ### Table View (Default)
