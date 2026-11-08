@@ -29,6 +29,7 @@ pip install slurm-dashboard
 - **Real-time job monitoring** - Live log streaming with auto-refresh
 - **Multiple views** - Table, Timeline, Pipeline DAG, Heatmap, and Insights
 - **Job management** - Submit, cancel, and resubmit jobs with templates
+- **Submitted scripts** - View the batch script retained by Slurm from each job's `script` button
 - **Smart log analysis** - Automatic error detection and highlighting
 - **Resource tracking** - CPU/GPU hours, memory efficiency, partition health
 - **Analytics dashboard** - Job patterns, peak hours, failure analysis
@@ -251,6 +252,34 @@ slurm-dashboard --log-root ~/slurm-logs
 
 ## Troubleshooting
 
+### Viewing submitted batch scripts
+
+Use **script** next to a running or recent job's log buttons, or **View submitted
+script** in the job details modal. This reads the copy submitted to Slurm, not
+the current file named in the submission command. Changing or deleting that
+source file does not change Slurm's retained copy. The viewer does not submit,
+cancel, or modify jobs, and leaves log streams running.
+
+The dashboard first sends `write batch_script JOB_ID -` to the `scontrol`
+interactive command reader. Slurm documents this command for interactive use;
+the dashboard pipes it to `scontrol --quiet` and reads the controller's retained
+copy from stdout without writing a file. It then tries
+`sacct --batch-script -j JOB_ID --noheader` as a fallback.
+Historical retrieval requires a supported Slurm version and
+`AccountingStoreFlags=job_script` to have been enabled when the job ran; the
+dashboard does not enable it. Access uses the dashboard process's Slurm identity;
+the controller permits only the job owner or a privileged user. Slurm permission
+denials, unavailable scripts, unsupported clients, and retrieval errors are
+shown explicitly. There is no fallback to a possibly changed source file.
+
+The preview is limited to 200 lines or 1 MiB and labels truncation. It includes
+the submitted script (including generated `sbatch --wrap` scripts), but not
+command-line resource overrides, the submission environment, or the contents of
+files referenced by the script. Jobs submitted without batch scripts have no
+script to display. Individual numeric array task IDs are accepted; grouped array
+ranges are not. Keep the dashboard behind a trusted SSH tunnel: scripts can
+contain sensitive values.
+
 ### "No recent logs found"
 - Check that `--log-root` points to the correct directory
 - Verify `--log-pattern` matches your log file naming
@@ -280,8 +309,8 @@ FLASK_DEBUG=1 slurm-dashboard
 # Run tests
 pytest
 
-# Run frontend log regression tests (requires Node.js 18+; no npm dependencies)
-node --test tests/dashboard_logs.test.cjs
+# Run frontend regression tests (requires Node.js 18+; no npm dependencies)
+node --test tests/dashboard_*.test.cjs
 ```
 
 ## License
