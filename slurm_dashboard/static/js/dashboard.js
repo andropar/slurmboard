@@ -2,6 +2,7 @@ const runningBody = document.getElementById('running-body');
 const recentBody = document.getElementById('recent-body');
 const logPanel = document.getElementById('log-content');
 const logTitle = document.getElementById('log-title');
+const logPopup = document.getElementById('log-popup');
 const searchBox = document.getElementById('search-box');
 const scrollToggle = document.getElementById('scroll-toggle');
 const themeToggle = document.getElementById('theme-toggle');
@@ -406,8 +407,7 @@ function exitCompareMode() {
     comparePanes = [];
     selectedForCompare.clear();
 
-    // Restore normal view
-    logPanel.parentElement.style.display = 'flex';
+    document.getElementById('dashboard-layout').classList.remove('comparing');
     const compareView = document.getElementById('compare-view');
     if (compareView) compareView.remove();
 
@@ -417,8 +417,8 @@ function exitCompareMode() {
 }
 
 function renderCompareView() {
-    // Hide normal log panel
-    logPanel.parentElement.style.display = 'none';
+    closeLogPopup();
+    document.getElementById('dashboard-layout').classList.add('comparing');
 
     // Create comparison view
     let compareView = document.getElementById('compare-view');
@@ -2030,6 +2030,29 @@ async function cancelJob(jobId) {
     }
 }
 
+function showLogPopup() {
+    const card = document.getElementById('log-panel');
+    card.classList.remove('widget-minimized', 'widget-hidden');
+    logPopup.hidden = false;
+    const close = logPopup.querySelector('.log-popup-close');
+    if (close) close.focus();
+}
+
+function closeLogPopup() {
+    if (logStream) {
+        logStream.close();
+        logStream = null;
+    }
+    currentLogKey = null;
+    originalLogContent = '';
+    logTitle.textContent = 'Logs';
+    logPanel.textContent = '';
+    logPopup.hidden = true;
+    document.querySelectorAll('.active-log').forEach(row => {
+        row.classList.remove('active-log');
+    });
+}
+
 function openLog(logKey, kind) {
     currentLogKey = logKey;
     currentLogKind = kind;
@@ -2046,6 +2069,8 @@ function openLog(logKey, kind) {
     document.querySelectorAll('tbody tr').forEach(row => {
         row.classList.toggle('active-log', row.dataset.logKey === logKey);
     });
+
+    showLogPopup();
 
     const params = new URLSearchParams({ log_key: logKey, kind });
     logStream = new EventSource(`/stream_log?${params.toString()}`);
@@ -2155,6 +2180,9 @@ logSearchInput.addEventListener('keydown', (e) => {
 logSearchPrev.addEventListener('click', goToPrevMatch);
 logSearchNext.addEventListener('click', goToNextMatch);
 logSearchClose.addEventListener('click', clearLogSearch);
+logPopup.addEventListener('click', (e) => {
+    if (e.target === logPopup) closeLogPopup();
+});
 
 document.addEventListener('keydown', (e) => {
     if (e.key === '/' && e.target.tagName !== 'INPUT') {
@@ -2179,16 +2207,8 @@ document.addEventListener('keydown', (e) => {
         logSearchInput.blur();
         if (logSearchInput.value) {
             clearLogSearch();
-        } else if (logStream) {
-            logStream.close();
-            logStream = null;
-            currentLogKey = null;
-            originalLogContent = '';
-            logTitle.textContent = 'Logs';
-            logPanel.textContent = '';
-            document.querySelectorAll('tbody tr').forEach(row => {
-                row.classList.remove('active-log');
-            });
+        } else if (!logPopup.hidden) {
+            closeLogPopup();
         }
     }
     if (e.key === 'r' && e.target.tagName !== 'INPUT') {
@@ -4578,8 +4598,7 @@ const layoutPresets = {
         widgets: {
             insights: { visible: true, minimized: false },
             running: { visible: true, minimized: false },
-            recent: { visible: true, minimized: false },
-            logs: { visible: true, minimized: false }
+            recent: { visible: true, minimized: false }
         },
         gridTemplate: null // Use default CSS grid
     },
@@ -4588,8 +4607,7 @@ const layoutPresets = {
         widgets: {
             insights: { visible: true, minimized: true },
             running: { visible: true, minimized: false },
-            recent: { visible: true, minimized: false },
-            logs: { visible: true, minimized: true }
+            recent: { visible: true, minimized: false }
         },
         gridTemplate: null
     },
@@ -4598,8 +4616,7 @@ const layoutPresets = {
         widgets: {
             insights: { visible: false, minimized: false },
             running: { visible: true, minimized: true },
-            recent: { visible: true, minimized: true },
-            logs: { visible: true, minimized: false }
+            recent: { visible: true, minimized: true }
         },
         gridTemplate: null
     },
@@ -4608,8 +4625,7 @@ const layoutPresets = {
         widgets: {
             insights: { visible: false, minimized: false },
             running: { visible: true, minimized: false },
-            recent: { visible: true, minimized: false },
-            logs: { visible: true, minimized: true }
+            recent: { visible: true, minimized: false }
         },
         gridTemplate: null
     }

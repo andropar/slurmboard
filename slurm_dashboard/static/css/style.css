@@ -762,10 +762,34 @@ button.copy-btn:hover { background: #38a169; }
 
 .layout {
     display: grid;
-    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.75fr);
+    grid-template-columns: minmax(0, 1fr);
     grid-gap: 24px;
     flex: 1;
     min-height: 0;
+}
+
+/* Logs open in a pop-up; the second column is only used by the compare view. */
+.layout.comparing {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.75fr);
+}
+
+.log-popup[hidden] {
+    display: none;
+}
+
+.log-popup #log-panel {
+    width: min(1200px, 100%);
+    height: min(85vh, 900px);
+    min-height: 280px;
+    flex: none;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
+}
+
+.log-popup .log-popup-close {
+    flex: none;
 }
 
 .table-column {
@@ -5315,7 +5339,7 @@ tr.batch-selected:hover {
 }
 
 /* Layout-specific grid adjustments */
-.layout[data-layout="debugging"] {
+.layout.comparing[data-layout="debugging"] {
     grid-template-columns: 1fr 2fr;
 }
 
@@ -5324,12 +5348,15 @@ tr.batch-selected:hover {
     overflow-y: auto;
 }
 
-.layout[data-layout="compact"] {
+.layout.comparing[data-layout="compact"] {
     grid-template-columns: 1fr 1fr;
 }
 
-.layout[data-layout="compact"] #log-panel {
-    grid-row: span 1;
+@media (max-width: 1100px) {
+    .layout.comparing,
+    .layout.comparing[data-layout] {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* Running panel header row adjustments for widget controls */

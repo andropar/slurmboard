@@ -23,6 +23,8 @@ function setup() {
     // Keep the fixture tied to the template's real log container, not the old wrapper.
     assert.match(template, /id="log-panel"[^>]*>[\s\S]*?<pre id="log-content"><\/pre>/);
     assert.doesNotMatch(template, /id="log-wrapper"/);
+    // Logs open in a hidden pop-up outside the job layout grid.
+    assert.match(template, /id="log-popup" hidden>\s*<div class="card widget" id="log-panel"/);
     const nodes = new Map();
     const listeners = new Map();
     const document = {
@@ -43,6 +45,12 @@ function setup() {
             children: [],
             parentElement: null,
             style: {},
+            classes: new Set(),
+            classList: {
+                add: name => node.classes.add(name),
+                remove: name => node.classes.delete(name),
+                contains: name => node.classes.has(name),
+            },
             innerHTML: '',
             value: '',
             addEventListener() {},
@@ -85,8 +93,11 @@ function setup() {
     header.appendChild(logSearchInput);
     wrapper.appendChild(logPanel);
     layout.appendChild(searchBox);
+    const logPopup = element('log-popup');
+    logPopup.hidden = true;
     const context = vm.createContext({
-        document, logPanel, logSearchInput, searchBox,
+        document, logPanel, logPopup, popupCloses: 0,
+        closeLogPopup() { context.popupCloses++; logPopup.hidden = true; }, logSearchInput, searchBox,
         logSearchPrev: element(), logSearchNext: element(), logSearchClose: element(),
         currentLogKey: 'synthetic-job', currentLogKind: 'stdout', annotations: {},
         originalLogContent: '', detectedErrors: [], dismissedErrors: new Set(),
@@ -168,19 +179,21 @@ for (const modifier of ['ctrlKey', 'metaKey']) {
     });
 }
 
-test('comparison hides and restores the existing log widget', () => {
-    const { context, nodes, wrapper } = setup();
+test('comparison closes the log pop-up and uses a two-column layout', () => {
+    const { context, nodes } = setup();
     let closed = 0;
     context.comparePanes = ['synthetic-job-a', 'synthetic-job-b'].map(logKey => ({
         logKey, kind: 'stdout', stream: { close() { closed++; } },
     }));
     vm.runInContext('renderCompareView()', context);
-    assert.equal(wrapper.style.display, 'none');
+    assert.equal(context.popupCloses, 1);
+    assert.equal(nodes.get('dashboard-layout').classList.contains('comparing'), true);
     assert.ok(nodes.get('compare-view'));
     assert.match(nodes.get('compare-view').innerHTML, /synthetic-job-a/);
     assert.match(nodes.get('compare-view').innerHTML, /synthetic-job-b/);
     vm.runInContext('exitCompareMode()', context);
-    assert.equal(wrapper.style.display, 'flex');
+    assert.equal(nodes.get('dashboard-layout').classList.contains('comparing'), false);
+    assert.equal(nodes.get('log-popup').hidden, true);
     assert.equal(nodes.get('compare-view'), undefined);
     assert.equal(closed, 2);
 });

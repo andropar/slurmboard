@@ -191,7 +191,9 @@
                 </div>
             </div>
         </div>
-        <div class="card widget" id="log-panel" data-widget="logs">
+    </div>
+    <div class="modal-overlay log-popup" id="log-popup" hidden>
+        <div class="card widget" id="log-panel" role="dialog" aria-modal="true" aria-labelledby="log-title">
             <div class="widget-header log-header">
                 <h2 id="log-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>Logs</h2>
                 <div class="log-controls">
@@ -210,9 +212,7 @@
                         </div>
                     </div>
                     <button class="scroll-toggle active" id="scroll-toggle" onclick="toggleAutoScroll()">Auto-scroll</button>
-                    <div class="widget-controls">
-                        <button class="widget-minimize" onclick="toggleWidgetMinimize('log-panel')" title="Minimize">−</button>
-                    </div>
+                    <button class="modal-close log-popup-close" onclick="closeLogPopup()" title="Close logs (Esc)" aria-label="Close logs">&times;</button>
                 </div>
             </div>
             <pre id="log-content"></pre>

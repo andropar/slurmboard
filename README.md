@@ -39,7 +39,8 @@ pip install slurm-dashboard
   following, explicit unavailable/error messages, and retry controls
 - **Advanced tools** - The previous dashboard, including submission, cancellation,
   templates, batch operations, resource analysis, timeline and pipeline views,
-  remains available at `/advanced`
+  remains available at `/advanced`. Logs there open in a pop-up (close with the
+  close button, Escape, or a backdrop click), so job lists keep the full width.
 - **Dark mode** - Easy on the eyes during those late-night debugging sessions
 
 ## Previous dashboard screenshots
