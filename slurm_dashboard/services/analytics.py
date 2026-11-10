@@ -181,6 +181,8 @@ def insights(jobs: List[dict]) -> dict:
         "time_insights": None,
         "failure_patterns": [],
         "efficiency_score": None,
+        "by_name": [],
+        "by_partition": [],
     }
     finished = [j for j in jobs if j.get("state_category") not in {"running", "pending", "unknown"}]
     if not finished:
@@ -250,7 +252,42 @@ def insights(jobs: List[dict]) -> dict:
         "time_efficiency": result["time_insights"]["avg_efficiency"] if timed else None,
     }
     result["failure_patterns"] = _failure_patterns(finished)
+    result["by_name"] = _breakdown(finished, lambda j: j.get("name") or "(unnamed)")[:15]
+    result["by_partition"] = _breakdown(finished, lambda j: j.get("partition") or "(none)")
     return result
+
+
+def _breakdown(finished: List[dict], key_of) -> List[dict]:
+    """Per-group run counts, outcomes, typical runtime, efficiency and hours."""
+    groups: Dict[str, List[dict]] = defaultdict(list)
+    for job in finished:
+        groups[key_of(job)].append(job)
+
+    rows = []
+    for key, jobs in groups.items():
+        counts = Counter(j["state_category"] for j in jobs)
+        completed = [j for j in jobs if j["state_category"] == "completed"]
+        runtimes = [j["elapsed_seconds"] for j in completed if j["elapsed_seconds"] > 0]
+        mem = [j["mem_eff"] for j in completed if j.get("mem_eff") is not None]
+        cpu = [j["cpu_eff"] for j in completed if j.get("cpu_eff") is not None]
+        hours = [j.get("elapsed_seconds", 0) / 3600 for j in jobs]
+        rows.append(
+            {
+                "key": key,
+                "runs": len(jobs),
+                "completed": counts["completed"],
+                "failed": counts["failed"] + counts["timeout"],
+                "cancelled": counts["cancelled"],
+                "success_rate": round(counts["completed"] / len(jobs) * 100, 1),
+                "median_runtime_seconds": int(_median(runtimes)) if runtimes else None,
+                "cpu_eff": round(sum(cpu) / len(cpu), 1) if cpu else None,
+                "mem_eff": round(sum(mem) / len(mem), 1) if mem else None,
+                "cpu_hours": round(sum(h * j.get("cpus", 0) for h, j in zip(hours, jobs)), 1),
+                "gpu_hours": round(sum(h * j.get("gpus", 0) for h, j in zip(hours, jobs)), 1),
+            }
+        )
+    rows.sort(key=lambda r: (r["runs"], r["cpu_hours"]), reverse=True)
+    return rows
 
 
 def _failure_patterns(finished: List[dict]) -> List[dict]:

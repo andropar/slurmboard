@@ -27,48 +27,34 @@ pip install slurm-dashboard
 
 ## Features
 
-- **Live queue** - running and pending jobs, pending reason and the scheduler's planned start time
-- **Job history** - finished jobs from accounting with state, exit code, runtime and efficiency
-- **Array jobs** - every array task is its own row with its own logs
-- **Log viewer** - live streaming, search, error detection and highlighting, annotations, side-by-side comparison
-- **Job management** - submit (script file or pasted script), cancel, resubmit with changed resources, batch actions, templates
-- **Views** - Table, Timeline, Pipeline DAG, Heatmap, and Insights
+- **One list for everything** - running, pending and finished jobs, grouped by day, with array tasks folded into one row per array
+- **A page per job** - state, runtime against the time limit, why a pending job is waiting (in plain words), efficiency, and tabs for output, errors, script and details
+- **Log viewer** - follows live output, handles progress bars and colour codes, flags tracebacks, out-of-memory kills and other problems, searches, and can load or download the whole file
+- **Job management** - submit a pasted script or a file, cancel, resubmit with changed resources, act on many jobs at once, reusable templates
+- **Search** - plain words, or filters such as `partition:gpu`, `state:timeout`, `name:train*`, `exit:!0`; the address bar keeps the current view, so it can be bookmarked
+- **Timeline, Pipelines, Insights** - when jobs ran, dependency chains as graphs, and how well resource requests match actual use
+- **Keyboard driven** - press `?` in the app for the shortcuts
 - **All-users mode** - `--all-users` shows the whole cluster, read-only for jobs that are not yours
 - **Clear failures** - if a Slurm command fails or times out, the page says so and keeps the last data
-- **Dark mode**
+- **Light and dark**, and usable on a phone
 
 ## Screenshots
 
-<table>
-<tr>
-<td width="50%">
+A failed job opens on its error output, with the traceback marked:
 
-**Job List & Logs**
+![A failed job](https://raw.githubusercontent.com/andropar/slurmboard/main/docs/images/job-failed.png)
 
-<img src="https://raw.githubusercontent.com/andropar/slurmboard/main/docs/images/jobs-logs.png" alt="Job List" width="100%">
+Insights: outcomes per day and how well requests fit:
 
-</td>
-<td width="50%">
+![Insights](https://raw.githubusercontent.com/andropar/slurmboard/main/docs/images/insights.png)
 
-**Insights Dashboard**
+Timeline: one lane per job name:
 
-<img src="https://raw.githubusercontent.com/andropar/slurmboard/main/docs/images/insights.png" alt="Insights" width="100%">
+![Timeline](https://raw.githubusercontent.com/andropar/slurmboard/main/docs/images/timeline.png)
 
-</td>
-</tr>
-<tr>
-<td width="50%">
+Dark theme:
 
-**Heatmap View**
-
-<img src="https://raw.githubusercontent.com/andropar/slurmboard/main/docs/images/heatmap.png" alt="Heatmap" width="100%">
-
-</td>
-<td width="50%">
-
-</td>
-</tr>
-</table>
+![Dark theme](https://raw.githubusercontent.com/andropar/slurmboard/main/docs/images/dashboard-dark.png)
 
 ## Quick Start
 
@@ -104,7 +90,7 @@ The dashboard can submit and cancel jobs as you, and on a login node any other u
 | `--port` | `5000` | Port to bind to |
 | `--user` | Current user | Whose jobs to show |
 | `--all-users` | off | Show every user's jobs (you can still only change your own) |
-| `--history-days` | `7` | Days of finished jobs in the job list (max 90) |
+| `--history-days` | `7` | Days of finished jobs listed by default (max 90; the list can go back further on request) |
 | `--log-root` | `~/slurm-logs` | Fallback directory to search for log files |
 | `--log-pattern` | `{name}/job.{stream}.{id}` | Fallback log file pattern under `--log-root` |
 | `--refresh-cache` | `20` | Seconds to reuse accounting results and the log index |
@@ -244,34 +230,23 @@ slurm-dashboard --log-root ~/slurm-logs
 
 ## Views
 
-### Table View (Default)
-- Active jobs (running and pending) with live status
-- Finished jobs from the last `--history-days` days with expandable details
-- Click `stdout` / `stderr` to stream a job's logs
-- Quick filters for state, partition, GPU usage
+### Jobs
+- **Active** lists running and pending jobs; **Finished** lists the last `--history-days` days, with a link at the bottom to go back 30 or 90 days.
+- Select a job to open its page on the right. The log tabs follow new output; scroll up to pause, press `f` to follow again.
+- Tick jobs (shift-click for a range, or tick an array) to cancel, resubmit or export several at once.
+- The chips filter by state. The search box takes plain words or `field:value` filters; `?` lists them.
 
-### Timeline View
-- Gantt-style visualization of job history
-- See job overlaps and gaps
-- Filter by state or job name
-- Zoom in/out for different time scales
+### Timeline
+- One lane per job name over the last 1 to 30 days, coloured by outcome. Runs that overlap stack.
+- Select a bar to open that job.
 
-### Pipeline View
-- DAG visualization of job dependencies
-- Track pipeline progress
-- See which jobs are blocking others
+### Pipelines
+- Jobs linked with `--dependency`, drawn as a graph, with progress per chain.
 
-### Heatmap View
-- GitHub-style activity calendar
-- Hourly submission patterns
-- Success/failure rate visualization
-
-### Insights View
-- CPU, memory and time-limit efficiency of completed jobs
-- CPU/GPU hours by partition
-- Memory and time-limit recommendations
-- Partitions and job names with high failure rates
-- Top job types
+### Insights
+- Jobs per day by outcome, with the numbers available as a table.
+- CPU, memory and time-limit efficiency of completed jobs, with a suggestion when requests are far above actual use.
+- Runs, success rate, typical runtime and CPU/GPU hours per job name and per partition. Select a row to see those jobs.
 
 ## Troubleshooting
 
@@ -285,7 +260,7 @@ Open the link with `?token=...` that the dashboard printed at startup, or copy t
 The log panel lists the paths it tried. If your logs live elsewhere, set `--log-root` and `--log-pattern`.
 
 ### Finished jobs are missing
-- The list covers `--history-days` (default 7). Check `sacct -u $USER --starttime=now-7days`.
+- The list covers `--history-days` (default 7); use the link at the bottom of the list to go back further. Check `sacct -u $USER --starttime=now-7days`.
 - With `--user`, make sure the name matches the submitting user.
 
 ### Efficiency shows N/A

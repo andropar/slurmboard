@@ -155,6 +155,8 @@ class Slurm:
                     "state_category": category,
                     "runtime": row["runtime"],
                     "limit": row["limit"],
+                    "runtime_seconds": int(parse_time_to_seconds(row["runtime"])),
+                    "limit_seconds": int(parse_time_to_seconds(row["limit"])),
                     "nodes": row["nodes"],
                     "reason": row["reason"] if row["reason"] not in {"None", "(null)"} else "",
                     "nodelist": row["nodelist"],
@@ -197,18 +199,40 @@ class Slurm:
     def accounting(self, days: int) -> Tuple[List[dict], Optional[str]]:
         """Jobs from the accounting database for the last `days` days.
 
-        A fresh result for a longer window is reused instead of querying again.
+        A long window is expensive for the accounting database, so it is cached
+        for longer and topped up with a cheap query for the last day; that keeps
+        just-finished jobs appearing promptly. A fresh result for a longer window
+        is reused instead of querying again.
         """
         cutoff = time.time() - days * 86400
         for key in self.cache.keys():
             if isinstance(key, tuple) and key[:2] == ("acct", self.user) and key[2] > days:
-                wider = self.cache.peek(key, self.accounting_ttl)
+                wider = self.cache.peek(key, self._acct_ttl(key[2]))
                 if wider is not None:
-                    return [j for j in wider if _in_window(j, cutoff)], None
+                    return self._with_latest([j for j in wider if _in_window(j, cutoff)], days)
         jobs, error = self.cache.get(
-            ("acct", self.user, days), self.accounting_ttl, lambda: self._load_accounting(days)
+            ("acct", self.user, days), self._acct_ttl(days), lambda: self._load_accounting(days)
         )
-        return jobs or [], error
+        if error:
+            return jobs or [], error
+        return self._with_latest(jobs or [], days)
+
+    def _acct_ttl(self, days: int) -> float:
+        """Seconds to reuse an accounting result: longer for longer windows."""
+        return max(self.accounting_ttl, days * 4) if days > 1 else self.accounting_ttl
+
+    def _with_latest(self, jobs: List[dict], days: int) -> Tuple[List[dict], Optional[str]]:
+        """Overlay the last day's records, which are refreshed more often."""
+        if days <= 1 or self._acct_ttl(days) <= self.accounting_ttl:
+            return jobs, None
+        latest, error = self.cache.get(
+            ("acct", self.user, 1), self.accounting_ttl, lambda: self._load_accounting(1)
+        )
+        if not latest:
+            return jobs, error
+        merged = {job["id"]: job for job in jobs}
+        merged.update({job["id"]: job for job in latest})
+        return sorted(merged.values(), key=_recency, reverse=True), error
 
     def _load_accounting(self, days: int, job_id: Optional[str] = None) -> List[dict]:
         fields = self._acct_fields()
@@ -361,6 +385,52 @@ class Slurm:
             "max_rss": f"{max_rss / 1024**2:.0f}M" if max_rss else None,
             "work_dir": job.get("work_dir"),
             "reason": job.get("reason"),
+        }
+
+    def summary(self, job: dict) -> dict:
+        """Everything the job page shows about one job, from a `find_job` record.
+
+        Queue and accounting use different field names for the same facts; this
+        folds them into one shape with numeric values the UI can format.
+        """
+        elapsed = job.get("runtime_seconds") or job.get("elapsed_seconds") or 0
+        limit = job.get("limit_seconds") or job.get("timelimit_seconds") or 0
+        active = bool(job.get("active"))
+        return {
+            "id": job["id"],
+            "raw_id": job.get("raw_id") or job["id"],
+            "name": job.get("name", ""),
+            "user": job.get("user", ""),
+            "state": job.get("state", "UNKNOWN"),
+            "state_category": job.get("state_category", "unknown"),
+            "active": active,
+            "owned": bool(job.get("owned")),
+            "exit_code": None if active else job.get("exit_code"),
+            "partition": job.get("partition", ""),
+            "nodelist": job.get("nodelist", ""),
+            "nodes": _to_int(str(job.get("nodes", ""))),
+            "cpus": _to_int(str(job.get("cpus", ""))),
+            "gpus": job.get("gpus") or parse_gpu_count(job.get("gres", "")),
+            "gres": job.get("gres", ""),
+            "req_mem": job.get("req_mem", ""),
+            "req_mem_bytes": job.get("req_mem_bytes") or 0,
+            "max_rss_bytes": job.get("max_rss_bytes") or 0,
+            "cpu_eff": job.get("cpu_eff"),
+            "mem_eff": job.get("mem_eff"),
+            "time_eff": round(min(100.0, elapsed / limit * 100), 1) if elapsed and limit else None,
+            "submit": job.get("submit"),
+            "start": job.get("start"),
+            "end": job.get("end"),
+            "expected_start": job.get("expected_start"),
+            "elapsed_seconds": elapsed,
+            "limit_seconds": limit,
+            "reason": job.get("reason", ""),
+            "dependency": job.get("dependency", ""),
+            "priority": job.get("priority", ""),
+            "work_dir": job.get("work_dir", ""),
+            "submit_line": job.get("submit_line", ""),
+            "array_job_id": job.get("array_job_id"),
+            "array_task_id": job.get("array_task_id"),
         }
 
     def submit_info(self, job_id: str, history_days: int = 7) -> dict:

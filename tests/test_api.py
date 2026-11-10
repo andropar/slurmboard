@@ -41,6 +41,8 @@ def test_jobs_come_from_slurm_and_are_scoped_to_the_user(client):
     assert {"5001", "5002", "5003", "5010_1", "5010_2"} <= set(running)
     assert "6001" not in running  # alice's job
     assert running["5010_1"]["array_job_id"] == "5010"  # array tasks stay separate
+    waiting = running["5010_[3-8%2]"]  # tasks that have not started: one condensed entry
+    assert waiting["array_job_id"] == "5010" and waiting["array_task_id"] == "3-8%2"
     assert running["5005"]["expected_start"] and running["5005"]["reason"] == "Priority"
     assert all(job["user"] == ME for job in data["recent"] if job.get("user"))
     states = {job["state"] for job in data["recent"]}
@@ -54,9 +56,46 @@ def test_job_without_matching_log_pattern_is_still_listed(cluster, tmp_path):
     assert len(data["recent"]) >= 30
 
 
-def test_log_only_jobs_are_listed_as_unknown(client):
-    orphan = next(job for job in get(client, "/api/jobs")["recent"] if job["id"] == "1234")
+def test_log_files_stand_in_when_accounting_is_unavailable(cluster, client):
+    cluster.update(fail=["sacct"])
+    data = get(client, "/api/jobs")
+    assert any("sacct failed" in error for error in data["errors"])
+    orphan = next(job for job in data["recent"] if job["id"] == "1234")
     assert orphan["state"] == "UNKNOWN" and orphan["name"] == "legacy_run"
+
+
+def test_log_only_jobs_stay_out_of_the_list_when_accounting_works(client):
+    assert "1234" not in {job["id"] for job in get(client, "/api/jobs")["recent"]}
+
+
+def test_history_window_can_be_widened_per_request(cluster, client):
+    week = get(client, "/api/jobs")
+    assert week["meta"]["history_days"] == 7 and week["meta"]["default_history_days"] == 7
+    day = get(client, "/api/jobs?days=1")
+    assert day["meta"]["history_days"] == 1
+    assert 0 < len(day["recent"]) < len(week["recent"])
+    assert get(client, "/api/jobs?days=9999")["meta"]["history_days"] == 90
+
+
+def test_long_windows_are_topped_up_with_the_latest_day(cluster, app):
+    slurm = app.extensions["slurm"]
+    month_key = ("acct", ME, 30)
+    before, _ = slurm.accounting(30)
+    assert next(job for job in before if job["id"] == "5002")["state"] == "RUNNING"
+    loaded_at = slurm.cache._values[month_key][0]
+
+    # The job ends; only the short last-day cache expires.
+    state = cluster.state
+    for job in state["jobs"]:
+        if job["id"] == "5002":
+            job.update(state="FAILED", end=time.time(), exit_code="1:0")
+    cluster.state_path.write_text(json.dumps(state))
+    day_key = ("acct", ME, 1)
+    slurm.cache._values[day_key] = (0.0, slurm.cache._values[day_key][1])
+
+    after, _ = slurm.accounting(30)
+    assert next(job for job in after if job["id"] == "5002")["state"] == "FAILED"
+    assert slurm.cache._values[month_key][0] == loaded_at  # the 30-day query was not repeated
 
 
 def test_all_users_mode_is_read_only_for_other_users(cluster, tmp_path):
@@ -103,7 +142,8 @@ def test_requests_share_cached_slurm_calls(cluster, client, monkeypatch):
     ):
         get(client, url)
     assert calls.count("squeue") == 1
-    assert calls.count("sacct") == 2  # --helpformat probe + one history query
+    # --helpformat probe, the 7-day history, and the frequently refreshed last day
+    assert calls.count("sacct") == 3
 
 
 # -------------------------------------------------------------------- details
@@ -186,7 +226,7 @@ def test_token_auth_flow(cluster, tmp_path):
     ).test_client()
     assert client.get("/api/jobs").status_code == 401
     assert client.get("/").status_code == 401
-    assert client.get("/static/js/dashboard.js").status_code == 401
+    assert client.get("/static/js/main.js").status_code == 401
     assert client.get("/?token=wrong").status_code == 401
     assert (
         client.get("/api/jobs", headers={"Authorization": "Bearer s3cret-token"}).status_code == 200
@@ -296,7 +336,7 @@ def test_pipeline_graph(client):
     pipeline = next(p for p in graph["pipelines"] if "5001" in p["job_ids"])
     assert pipeline["job_ids"] == ["5001", "5003", "5004"] and pipeline["total"] == 3
     array_node = next(node for node in graph["nodes"] if node["id"] == "5010")
-    assert array_node["tasks"] == 2 and array_node["state_category"] == "running"
+    assert array_node["tasks"] == 3 and array_node["state_category"] == "running"
 
 
 def test_insights_usage_and_heatmap(client):
@@ -351,3 +391,72 @@ def test_templates_survive_a_restart(cluster, tmp_path):
     assert restarted.delete("/api/templates/gpu_train", headers=HEADERS).status_code == 200
     assert get(restarted, "/api/templates")["templates"] == []
     assert restarted.delete("/api/templates/gpu_train", headers=HEADERS).status_code == 404
+
+
+# ------------------------------------------------------------------ job page
+
+
+def test_job_endpoint_combines_summary_submission_and_logs(client):
+    data = get(client, "/api/job/5001")
+    job = data["job"]
+    assert job["active"] and job["owned"] and job["state"] == "RUNNING"
+    assert 0 < job["elapsed_seconds"] < job["limit_seconds"] == 4 * 3600
+    assert 0 < job["time_eff"] < 100 and job["exit_code"] is None
+    assert data["submission"]["script_path"].endswith("train_resnet.sh")
+    assert data["logs"]["stdout"]["size"] > 0 and data["logs"]["stdout"]["path"].endswith(
+        "job.out.5001"
+    )
+    assert data["logs"]["stderr"]["size"] == 0 and not data["logs"]["same_file"]
+
+    pending = get(client, "/api/job/5005")
+    assert pending["logs"]["stdout"]["path"] is None and pending["logs"]["stdout"]["tried"]
+    assert pending["job"]["expected_start"] and pending["job"]["reason"] == "Priority"
+
+    finished = get(client, "/api/job/4990")["job"]
+    assert (
+        not finished["active"]
+        and finished["cpu_eff"] is not None
+        and finished["mem_eff"] is not None
+    )
+
+
+def test_job_endpoint_for_log_only_and_unknown_jobs(client):
+    orphan = get(client, "/api/job/1234")
+    assert orphan["job"]["state"] == "UNKNOWN" and orphan["submission"] is None
+    assert orphan["logs"]["stdout"]["path"].endswith("job.out.1234")
+    assert client.get("/api/job/424242").status_code == 404
+    assert client.get("/api/job/..%2Fetc").status_code == 400
+
+
+def test_queue_rows_carry_numeric_runtime_and_limit(client):
+    running = {job["id"]: job for job in get(client, "/api/jobs")["running"]}
+    assert running["5001"]["limit_seconds"] == 4 * 3600
+    assert 8000 < running["5001"]["runtime_seconds"] < 10000
+
+
+def test_log_download(client):
+    response = client.get("/api/log_file/5001?kind=stdout")
+    assert response.status_code == 200
+    assert "attachment" in response.headers["Content-Disposition"]
+    assert b"UserWarning: synthetic warning" in response.data
+    assert client.get("/api/log_file/5005?kind=stdout").status_code == 404
+
+
+def test_tail_reports_first_line_number(tmp_path):
+    log = tmp_path / "job.out"
+    log.write_text("".join(f"line {i}\n" for i in range(1, 1001)))
+    whole = next(tail_events(log))
+    assert whole["first_line"] == 1 and not whole["truncated"]
+    tail = next(tail_events(log, snapshot_bytes=100))
+    first_shown = tail["snapshot"].splitlines()[0]
+    assert tail["truncated"] and first_shown == f"line {tail['first_line']}"
+
+
+def test_insights_breakdowns(client):
+    data = get(client, "/api/insights?days=30")
+    names = {row["key"]: row for row in data["by_name"]}
+    row = names["train_resnet"]
+    assert row["runs"] == row["completed"] + row["failed"] + row["cancelled"]
+    assert row["cpu_hours"] > 0 and row["median_runtime_seconds"]
+    assert {row["key"] for row in data["by_partition"]} == {"gpu", "cpu"}
+    assert len(data["daily"]) == 31 and data["usage"]["gpu_hours"] > 0

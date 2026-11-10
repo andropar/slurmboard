@@ -61,6 +61,9 @@ def create_app(config: Config, token: Optional[str] = None) -> Flask:
         static_folder=str(package_dir / "static"),
     )
     app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024
+    # The page is made of ES modules that import each other by plain file name,
+    # so a version query cannot bust their cache. Revalidate instead (cheap: ETags).
+    app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
     app.extensions["slurm"] = Slurm(config.scope_user, accounting_ttl=config.refresh_cache)
     app.extensions["log_index"] = LogIndex(
         config.log_root, config.log_pattern, ttl=config.refresh_cache

@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import logging
+import socket
 from pathlib import Path
 from typing import Any, Callable, List, Optional, Tuple
 
-from flask import Blueprint, Response, current_app, jsonify, request
+from flask import Blueprint, Response, current_app, jsonify, request, send_file
 
 from slurm_dashboard.config import Config, get_config
 from slurm_dashboard.services import analytics
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 api = Blueprint("api", __name__, url_prefix="/api")
 
-MAX_RECENT = 500
+MAX_RECENT = 1500
 RECENT_FIELDS = (
     "id",
     "name",
@@ -32,7 +33,12 @@ RECENT_FIELDS = (
     "gpus",
     "cpus",
     "elapsed",
+    "elapsed_seconds",
+    "timelimit_seconds",
     "exit_code",
+    "submit",
+    "nodelist",
+    "array_task_id",
     "start",
     "end",
     "cpu_eff",
@@ -90,13 +96,13 @@ def locate_log(job_id: str, kind: str) -> Tuple[Optional[Path], str]:
     path, tried = resolve_log(job, kind, scontrol, log_index())
     if path is None:
         looked = "\n".join(f"  {p}" for p in tried) or "  (Slurm reported no output path)"
-        hint = ""
         if job.get("state_category") == "pending":
-            hint = "\nThe job has not started yet."
-        return None, (
-            f"No {kind} file found for job {job_id}. Looked for:\n{looked}{hint}\n"
-            "If your logs live elsewhere, set --log-root and --log-pattern."
-        )
+            hint = "The job has not started yet."
+        elif job.get("user") and not job.get("owned"):
+            hint = f"The job belongs to {job['user']}; you may not be allowed to read its files."
+        else:
+            hint = "If your logs live elsewhere, set --log-root and --log-pattern."
+        return None, f"No {kind} file found for job {job_id}. Looked for:\n{looked}\n{hint}"
     return path, ""
 
 
@@ -105,11 +111,15 @@ def locate_log(job_id: str, kind: str) -> Tuple[Optional[Path], str]:
 
 @api.route("/jobs")
 def jobs() -> Response:
-    """Active jobs from the queue plus finished jobs from accounting."""
+    """Active jobs from the queue plus finished jobs from accounting.
+
+    Query: days (1-90) of finished jobs; defaults to --history-days.
+    """
     config = get_config()
     client = slurm()
+    days = _days(config.history_days, 90)
     queue, queue_error = client.queue()
-    history, history_error = client.accounting(config.history_days)
+    history, history_error = client.accounting(days)
 
     running = [dict(job, start_time=job.get("start") or job.get("submit")) for job in queue]
     active_ids = {job["id"] for job in queue}
@@ -123,10 +133,12 @@ def jobs() -> Response:
         recent.append(row)
         if len(recent) >= MAX_RECENT:
             break
+    truncated = len(recent) >= MAX_RECENT
 
-    if not config.all_users:
-        known = active_ids | {job["id"] for job in history} | {job["raw_id"] for job in history}
-        for orphan in log_index().orphans(known, limit=max(0, min(100, MAX_RECENT - len(recent)))):
+    if history_error and not history and not config.all_users:
+        # Without accounting (no slurmdbd, or it is down) the log files under
+        # --log-root are the only record of past jobs.
+        for orphan in log_index().orphans(active_ids, limit=200):
             recent.append(dict(orphan, updated=orphan["end"]))
 
     errors = [e for e in (queue_error, history_error) if e]
@@ -139,9 +151,67 @@ def jobs() -> Response:
                 "user": config.user,
                 "os_user": client.os_user,
                 "all_users": config.all_users,
-                "history_days": config.history_days,
+                "history_days": days,
+                "default_history_days": config.history_days,
+                "truncated": truncated,
+                "host": socket.gethostname().split(".")[0],
             },
         }
+    )
+
+
+@api.route("/job/<path:job_id>")
+def job(job_id: str) -> Any:
+    """One job in full: summary, how it was submitted, and where its logs are."""
+    bad = _job_id_or_400(job_id)
+    if bad:
+        return bad
+    config = get_config()
+    client = slurm()
+    record = client.find_job(job_id, config.history_days)
+    scontrol: dict = {}
+    submission = None
+    if record is None:
+        # Aged out of accounting, but its log files are still under --log-root.
+        entry = log_index().entries().get(job_id)
+        if entry is None:
+            return _error(f"Job {job_id} is unknown to Slurm", 404)
+        record = {"id": job_id, "name": entry["name"], "active": False}
+    else:
+        if record["active"]:
+            scontrol = client.scontrol_job(record["id"])
+        submission = client.submit_info(record["id"], config.history_days)
+
+    logs: dict = {}
+    for kind in ("stdout", "stderr"):
+        path, tried = resolve_log(record, kind, scontrol, log_index())
+        size = None
+        if path is not None:
+            try:
+                size = path.stat().st_size
+            except OSError:
+                path = None
+        logs[kind] = {"path": str(path) if path else None, "size": size, "tried": tried}
+    logs["same_file"] = bool(
+        logs["stdout"]["path"] and logs["stdout"]["path"] == logs["stderr"]["path"]
+    )
+    return jsonify({"job": client.summary(record), "submission": submission, "logs": logs})
+
+
+@api.route("/log_file/<path:job_id>")
+def log_file(job_id: str) -> Any:
+    """Download a job's complete log. Query: kind (stdout|stderr)."""
+    kind = request.args.get("kind", "stdout")
+    path, message = locate_log(job_id, kind)
+    if path is None:
+        return _error(message.splitlines()[0], 404)
+    suffix = "out" if kind == "stdout" else "err"
+    return send_file(
+        path,
+        mimetype="text/plain",
+        as_attachment=True,
+        download_name=f"slurm-{job_id}.{suffix}.log",
+        max_age=0,
     )
 
 
@@ -304,7 +374,20 @@ def job_dependencies() -> Response:
 @api.route("/insights")
 def insights() -> Response:
     """Success rate, efficiency and request recommendations. Query: days (max 90)."""
-    return _with_history(_days(30, 90), analytics.insights)
+    days = _days(30, 90)
+
+    def build(jobs: List[dict]) -> dict:
+        payload = analytics.insights(jobs)
+        totals = analytics.usage(jobs, days)
+        payload["usage"] = {
+            "cpu_hours": totals["total_cpu_hours"],
+            "gpu_hours": totals["total_gpu_hours"],
+        }
+        payload["daily"] = analytics.heatmap(jobs, days)["daily"]
+        payload["days"] = days
+        return payload
+
+    return _with_history(days, build)
 
 
 @api.route("/usage")
@@ -371,4 +454,9 @@ def delete_template(template_id: str) -> Any:
 
 def describe(config: Config) -> dict:
     """Settings the page needs before its first data request."""
-    return {"user": config.user, "all_users": config.all_users, "history_days": config.history_days}
+    return {
+        "user": config.user,
+        "all_users": config.all_users,
+        "history_days": config.history_days,
+        "host": socket.gethostname().split(".")[0],
+    }

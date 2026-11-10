@@ -21,6 +21,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 SNAPSHOT_BYTES = 200_000
+FULL_SNAPSHOT_BYTES = 8_000_000
+LINE_COUNT_LIMIT = 64 * 1024 * 1024
 READ_CHUNK = 64 * 1024
 MAX_LINE_CHARS = 2000
 STREAMS = {"stdout": "out", "stderr": "err"}
@@ -189,12 +191,32 @@ def resolve_log(
 # ------------------------------------------------------------------ streaming
 
 
-def tail_events(path: Path, poll: float = 1.0, heartbeat: float = 15.0) -> Iterator[dict]:
+def _count_lines(handle, end: int) -> int:
+    """Number of newlines in the first `end` bytes of an open binary file."""
+    handle.seek(0)
+    count, remaining = 0, end
+    while remaining > 0:
+        chunk = handle.read(min(1024 * 1024, remaining))
+        if not chunk:
+            break
+        count += chunk.count(b"\n")
+        remaining -= len(chunk)
+    return count
+
+
+def tail_events(
+    path: Path,
+    poll: float = 1.0,
+    heartbeat: float = 15.0,
+    snapshot_bytes: int = SNAPSHOT_BYTES,
+) -> Iterator[dict]:
     """Yield log updates for a file: one snapshot, then appended chunks.
 
     Event dicts carry one of ``snapshot``, ``append``, ``reset``, ``error`` or
-    ``ping``. Pings let the server notice a closed browser tab, so idle streams
-    of finished jobs do not keep a thread forever.
+    ``ping``. The snapshot is the last `snapshot_bytes` of the file and says
+    which line number it starts at (None for files too large to count cheaply).
+    Pings let the server notice a closed browser tab, so idle streams of
+    finished jobs do not keep a thread forever.
     """
     try:
         handle = path.open("rb")
@@ -205,15 +227,27 @@ def tail_events(path: Path, poll: float = 1.0, heartbeat: float = 15.0) -> Itera
     with handle:
         decoder = codecs.getincrementaldecoder("utf-8")("replace")
         size = os.fstat(handle.fileno()).st_size
-        start = max(size - SNAPSHOT_BYTES, 0)
+        start = max(size - snapshot_bytes, 0)
         handle.seek(start)
         data = handle.read()
+        position = handle.tell()
+        first_line: Optional[int] = 1
         if start > 0:
             # Drop the partial first line of the tail.
             newline = data.find(b"\n")
-            data = data[newline + 1 :] if newline >= 0 else data
-        position = handle.tell()
-        yield {"snapshot": decoder.decode(data), "truncated": start > 0, "size": size}
+            if newline >= 0:
+                start += newline + 1
+                data = data[newline + 1 :]
+            first_line = None
+            if size <= LINE_COUNT_LIMIT:
+                first_line = _count_lines(handle, start) + 1
+                handle.seek(position)
+        yield {
+            "snapshot": decoder.decode(data),
+            "truncated": start > 0,
+            "size": size,
+            "first_line": first_line,
+        }
 
         idle = 0.0
         while True:

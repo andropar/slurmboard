@@ -12,8 +12,11 @@ from pathlib import Path
 SCRIPT = "#!/bin/bash\n#SBATCH --job-name={name}\n#SBATCH --time=04:00:00\n\npython train.py --config {name}.yaml\n"
 
 
-def build(root: Path, me: str = "", seed: int = 0) -> Path:
-    """Write state.json, scripts and logs under `root`; return the state path."""
+def build(root: Path, me: str = "", seed: int = 0, history_jobs: int = 40) -> Path:
+    """Write state.json, scripts and logs under `root`; return the state path.
+
+    `history_jobs` finished jobs are spread four hours apart, so 40 cover about a week.
+    """
     me = me or getpass.getuser()
     rng = random.Random(seed)
     now = time.time()
@@ -96,10 +99,12 @@ def build(root: Path, me: str = "", seed: int = 0) -> Path:
     add("5005", "sweep_lr", "PENDING", reason="Priority", expected_start=now + 1800)
     add("5010_1", "sweep_seed", "RUNNING", run_h=0.2, raw_id="5011")
     add("5010_2", "sweep_seed", "RUNNING", run_h=0.2, raw_id="5012")
+    # Tasks that have not started are one condensed queue entry, as squeue prints them.
+    add("5010_[3-8%2]", "sweep_seed", "PENDING", reason="JobArrayTaskLimit", raw_id="5010")
     add("6001", "simulate", "RUNNING", user="alice", run_h=5)
     add("6002", "align_reads", "PENDING", user="bob", reason="Resources")
     states = ["COMPLETED"] * 6 + ["FAILED", "TIMEOUT", "OUT_OF_MEMORY", "CANCELLED"]
-    for idx in range(40):
+    for idx in range(history_jobs):
         state = rng.choice(states)
         codes = {"FAILED": "1:0", "OUT_OF_MEMORY": "0:125", "TIMEOUT": "0:0", "CANCELLED": "0:15"}
         add(

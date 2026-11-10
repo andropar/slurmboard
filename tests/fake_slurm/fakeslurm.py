@@ -123,7 +123,7 @@ def squeue(args, state):
             "b": job.get("gres", "N/A"),
             "C": str(job.get("cpus", 1)),
             "F": job["id"].split("_")[0],
-            "K": job["id"].split("_")[1] if "_" in job["id"] else "N/A",
+            "K": job["id"].split("_")[1].strip("[]") if "_" in job["id"] else "N/A",
             "Q": str(job.get("priority", 1000)),
         }
         line = fmt
