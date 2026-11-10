@@ -7,8 +7,9 @@ from typing import Dict
 
 from flask import Blueprint, Response, jsonify, request
 
-from slurm_dashboard.config import get_config
+from slurm_dashboard.config import Config, LogPattern, get_config
 from slurm_dashboard.services.logs import collect_recent_jobs, safe_log_path, search_log
+from slurm_dashboard.services.queue import get_queue
 from slurm_dashboard.services.slurm import (
     cancel_job,
     get_available_partitions,
@@ -32,6 +33,32 @@ from slurm_dashboard.services.slurm import (
 )
 
 api = Blueprint("api", __name__, url_prefix="/api")
+
+
+@lru_cache(maxsize=8)
+def cached_queue(bucket: int, user: str, root: str, pattern: str, days: int) -> dict:
+    from pathlib import Path
+
+    return get_queue(Config(user=user, log_root=Path(root), log_pattern=LogPattern(pattern)), days)
+
+
+@api.route("/queue")
+def queue() -> Response:
+    """Return all jobs in the displayed scope; clients sort/filter before paginating."""
+    try:
+        days = int(request.args.get("days", "7"))
+    except ValueError:
+        return jsonify({"error": "History must be a whole number of days"}), 400
+    if days not in {1, 7, 30, 90}:
+        return jsonify({"error": "History must be 1, 7, 30, or 90 days"}), 400
+    config = get_config()
+    data = cached_queue(
+        int(time.time() // max(1, config.refresh_cache)), config.user,
+        str(config.log_root), config.log_pattern.pattern, days,
+    )
+    response = jsonify(data)
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @lru_cache(maxsize=1)

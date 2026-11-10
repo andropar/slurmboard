@@ -3,17 +3,20 @@
 [![PyPI version](https://img.shields.io/pypi/v/slurm-dashboard.svg)](https://pypi.org/project/slurm-dashboard/)
 [![Python versions](https://img.shields.io/pypi/pyversions/slurm-dashboard.svg)](https://pypi.org/project/slurm-dashboard/)
 
-A lightweight, real-time web dashboard for monitoring Slurm HPC cluster jobs. View logs, track resource usage, analyze job patterns, and manage your workloads from a clean, modern interface.
-
-![Dashboard Overview](https://raw.githubusercontent.com/andropar/slurmboard/main/docs/images/dashboard-main.png)
+A lightweight, job-first dashboard for Slurm clusters. See each job's ID, full
+name, status, queued/start/end times, submitted script, stdout, and stderr in one
+table. No expansion is needed to read long names.
 
 ## At a Glance
 
-Slurm Dashboard is a small Flask app and CLI for researchers and ML engineers who run batches of experiments on Slurm clusters. It brings queue state, logs, resource usage, and job history into one browser view so long-running training or analysis jobs are easier to debug.
+Slurm Dashboard is a small Flask app and CLI for researchers and ML engineers
+running batches of experiments. The default screen focuses on the queue;
+secondary analytics and job-management features remain under **Advanced tools**.
 
 - Tracks live and historical jobs through Slurm's `squeue` and `sacct` commands
 - Streams stdout/stderr from configurable cluster log layouts
-- Surfaces failure patterns, resource efficiency, GPU usage, and submission activity
+- Sorts all six data columns and paginates after searching/filtering
+- Uses blue for running jobs, red for failures, and green for completed jobs
 - Ships as a PyPI package with a `slurm-dashboard` command-line entry point
 
 The project is intentionally lightweight: no database, no cluster daemon, and no scheduler-side service. It can run on a login node behind an SSH tunnel and read the same Slurm state a user can already access from the shell.
@@ -26,17 +29,24 @@ pip install slurm-dashboard
 
 ## Features
 
-- **Real-time job monitoring** - Live log streaming with auto-refresh; logs open in a pop-up (close with ×, Esc, or a backdrop click) so job lists keep the full width
-- **Multiple views** - Table, Timeline, Pipeline DAG, Heatmap, and Insights
-- **Job management** - Submit, cancel, and resubmit jobs with templates
-- **Submitted scripts** - View the batch script retained by Slurm from each job's `script` button
-- **Smart log analysis** - Automatic error detection and highlighting
-- **Resource tracking** - CPU/GPU hours, memory efficiency, partition health
-- **Analytics dashboard** - Job patterns, peak hours, failure analysis
-- **Batch operations** - Select multiple jobs for cancel/resubmit/export
+- **Real-time job monitoring** - Live log streaming with auto-refresh
+- **Job table** - Full names, IDs, statuses, and explicit UTC lifecycle timestamps
+- **Sorting and pagination** - Click column headers to reverse sort; 100 rows per
+  page by default, with 10/25/50/100 options and First/Previous/Next/Last controls
+- **Search and filters** - Search ID/name, filter status and queued dates; all
+  filters and sorts apply to the entire loaded scope, not just the current page
+- **Submitted scripts and logs** - Direct Script/Stdout/Stderr actions; live log
+  following, explicit unavailable/error messages, and retry controls
+- **Advanced tools** - The previous dashboard, including submission, cancellation,
+  templates, batch operations, resource analysis, timeline and pipeline views,
+  remains available at `/advanced`. Logs there open in a pop-up (close with the
+  close button, Escape, or a backdrop click), so job lists keep the full width.
 - **Dark mode** - Easy on the eyes during those late-night debugging sessions
 
-## Screenshots
+## Previous dashboard screenshots
+
+These screenshots show the older dashboard, now under **Advanced tools**, not
+the default job table.
 
 <table>
 <tr>
@@ -218,13 +228,65 @@ slurm-dashboard --log-root ~/slurm-logs
 # Ctrl+B, D to detach
 ```
 
+### Restarting a Remote Dashboard
+
+`scripts/restart-remote-dashboard.sh` restarts a dashboard that runs in a
+tmux session on a cluster host, and waits until it answers HTTP requests. Run
+it from your workstation:
+
+```bash
+# Restart only
+scripts/restart-remote-dashboard.sh
+
+# Install a git ref, then restart
+git fetch origin
+scripts/restart-remote-dashboard.sh --ref origin/main
+```
+
+With `--ref`, the script builds a wheel locally from that commit, copies it
+to the host and installs it offline with `--no-deps`. The cluster does not
+need GitHub access. The script records the deployed commit in the
+virtualenv and prints the previous one, so you can roll back with
+`--ref <previous commit>`.
+
+The defaults match the `agent_3d` deployment: host `agent_3d`, virtualenv
+`~/LiteReality-Agent/.venv`, tmux session `ttsd-slurm-dashboard`, port 8787.
+Override them with options or `SLURMBOARD_*` environment variables; see
+`--help`. The script refuses to start if the port is in use outside the tmux
+session. It never submits, cancels or modifies Slurm jobs.
+
 ## Views
 
-### Table View (Default)
-- Running jobs with real-time status
-- Recent jobs with expandable details
-- Click any job to view its logs
-- Quick filters for state, partition, GPU usage
+### Job Table (Default)
+
+The table combines the live `squeue` queue, a selectable 1/7/30/90-day `sacct`
+accounting window (7 days by default), and jobs discovered under `--log-root`.
+The footer states this scope; pagination does not imply all-time cluster history.
+Extend the history window to retrieve older accounting records. Discovered logs
+outside the window remain visible with unknown status/timestamps rather than
+invented dates. A file's modification time is never treated as a job's queued,
+started, or ended time.
+
+Slurm commands run with UTC timestamps. Pending jobs have no actual start time:
+the scheduler's predicted start is not displayed as one. Active jobs have no end
+time. Missing or unavailable times are shown as `—`. Each array task keeps its
+own ID. Failures of Slurm commands are shown explicitly above the table, including
+partial results; failed refreshes retain previous data with a stale-data warning.
+
+The queue refreshes every 20 seconds while visible and when returning to the tab.
+Refresh preserves sorting, filters, pagination, and the open file viewer without
+restarting log streams. Only the displayed page is rendered; sorting/filtering
+uses the full returned dataset. Narrow screens use job cards with separate sort
+controls. There are no submit/cancel controls on the default page.
+
+The log viewer uses the configured log pattern, initially tails up to 200 KB,
+and retains the latest 200,000 characters in the browser. **Follow output** can be
+turned off to read earlier lines. Changing file tabs or closing the viewer closes
+the previous stream. Missing/empty logs and disconnects are distinct visible states.
+
+### Advanced Tools
+
+The remaining views below are accessed through **Advanced tools** (`/advanced`).
 
 ### Timeline View
 - Gantt-style visualization of job history
@@ -252,13 +314,20 @@ slurm-dashboard --log-root ~/slurm-logs
 
 ## Troubleshooting
 
+### Reading long recent-job names
+
+The default job table always wraps the full job name, including names without
+spaces on narrow screens. In **Advanced tools**, expand a recent job by clicking
+its name or chevron; collapsed rows there remain compact.
+
 ### Viewing submitted batch scripts
 
-Use **script** next to a running or recent job's log buttons, or **View submitted
-script** in the job details modal. This reads the copy submitted to Slurm, not
+Use **Script** next to a job's Stdout/Stderr buttons. In **Advanced tools**, use
+**script** or **View submitted script** in the job details modal.
+This reads the copy submitted to Slurm, not
 the current file named in the submission command. Changing or deleting that
 source file does not change Slurm's retained copy. The viewer does not submit,
-cancel, or modify jobs, and leaves log streams running.
+cancel, or modify jobs.
 
 The dashboard first sends `write batch_script JOB_ID -` to the `scontrol`
 interactive command reader. Slurm documents this command for interactive use;
@@ -276,8 +345,9 @@ The preview is limited to 200 lines or 1 MiB and labels truncation. It includes
 the submitted script (including generated `sbatch --wrap` scripts), but not
 command-line resource overrides, the submission environment, or the contents of
 files referenced by the script. Jobs submitted without batch scripts have no
-script to display. Individual numeric array task IDs are accepted; grouped array
-ranges are not. Keep the dashboard behind a trusted SSH tunnel: scripts can
+script to display. Numeric job IDs, individual array task IDs, and heterogeneous
+component IDs are accepted; grouped array ranges are not.
+Keep the dashboard behind a trusted SSH tunnel: scripts can
 contain sensitive values.
 
 ### "No recent logs found"

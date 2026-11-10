@@ -73,11 +73,12 @@ def test_failures_are_explicit(run, failure, expected):
     assert all(attempt["message"] for attempt in data["attempts"])
 
 
-def test_array_task_id_is_passed_unchanged(run):
+@pytest.mark.parametrize("job_id", ["123_4", "123+1", "123_4+1"])
+def test_array_or_component_id_is_passed_unchanged(run, job_id):
     run.return_value = result("#!/bin/bash\necho array\n")
-    assert get_submitted_script("123_4", "alice")["status"] == "available"
+    assert get_submitted_script(job_id, "alice")["status"] == "available"
     assert run.call_args.args[0] == ["scontrol", "--quiet"]
-    assert run.call_args.kwargs["input"] == "write batch_script 123_4 -\n"
+    assert run.call_args.kwargs["input"] == f"write batch_script {job_id} -\n"
 
 
 @pytest.mark.parametrize("job_id", ["--help", "123;echo bad", "１２３", "123.batch", "123_[1-5]"])

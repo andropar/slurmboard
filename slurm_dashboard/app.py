@@ -68,6 +68,10 @@ def create_app(config: Config) -> Flask:
     # Index route
     @app.route("/")
     def index() -> str:
+        return render_template("queue.html")
+
+    @app.route("/advanced")
+    def advanced() -> str:
         return render_template("index.html")
 
     return app
