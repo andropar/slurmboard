@@ -1,12 +1,14 @@
 """Configuration management for Slurm Dashboard."""
+
 from __future__ import annotations
 
 import argparse
+import getpass
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
-
 
 # Default pattern matches: {log_root}/{job_name}/job.{out|err}.{job_id}
 DEFAULT_LOG_PATTERN = "{name}/job.{stream}.{id}"
@@ -72,14 +74,7 @@ class LogPattern:
         except ValueError:
             return None
 
-        # Convert pattern to regex
-        regex_pattern = re.escape(self.pattern)
-        regex_pattern = regex_pattern.replace(r"\{name\}", r"(?P<name>[^/]+)")
-        regex_pattern = regex_pattern.replace(r"\{id\}", r"(?P<id>\d+)")
-        regex_pattern = regex_pattern.replace(r"\{stream\}", r"(?P<stream>out|err)")
-        regex_pattern = f"^{regex_pattern}$"
-
-        match = re.match(regex_pattern, str(rel_path))
+        match = self._regex().match(rel_path.as_posix())
         if match:
             result = match.groupdict()
             # If pattern has no {name}, use job_id as the name
@@ -87,6 +82,18 @@ class LogPattern:
                 result["name"] = result.get("id", "unknown")
             return result
         return None
+
+    def _regex(self) -> "re.Pattern[str]":
+        """Compile the pattern once; array task IDs ("123_4") count as IDs."""
+        compiled = getattr(self, "_compiled", None)
+        if compiled is None:
+            regex = re.escape(self.pattern)
+            regex = regex.replace(r"\{name\}", r"(?P<name>[^/]+?)")
+            regex = regex.replace(r"\{id\}", r"(?P<id>\d+(?:_\d+)?)")
+            regex = regex.replace(r"\{stream\}", r"(?P<stream>out|err)")
+            compiled = re.compile(f"^{regex}$")
+            object.__setattr__(self, "_compiled", compiled)
+        return compiled
 
     def validate(self) -> List[str]:
         """
@@ -112,12 +119,22 @@ class Config:
     user: str = ""
     refresh_cache: int = 20
     log_pattern: LogPattern = field(default_factory=LogPattern)
+    all_users: bool = False
+    history_days: int = 7
+    auth: bool = True
+    token: Optional[str] = None
+    state_dir: Path = field(default_factory=lambda: default_state_dir())
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         # Default user to current user if not specified
         if not self.user:
-            import getpass
             self.user = getpass.getuser()
+        self.history_days = max(1, min(90, self.history_days))
+
+    @property
+    def scope_user(self) -> Optional[str]:
+        """User whose jobs are shown; None means every user."""
+        return None if self.all_users else self.user
 
     @classmethod
     def from_args(cls, args: argparse.Namespace) -> "Config":
@@ -129,13 +146,21 @@ class Config:
             user=args.user,
             refresh_cache=args.refresh_cache,
             log_pattern=LogPattern(pattern=args.log_pattern),
+            all_users=args.all_users,
+            history_days=args.history_days,
+            auth=not args.no_auth,
+            token=args.token,
         )
 
 
-def parse_args() -> argparse.Namespace:
-    """Parse command line arguments."""
-    import getpass
+def default_state_dir() -> Path:
+    """Directory for the access token and saved templates."""
+    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    return Path(base) / "slurm-dashboard"
 
+
+def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+    """Parse command line arguments."""
     parser = argparse.ArgumentParser(
         description="Slurm Dashboard - A lightweight web dashboard for monitoring Slurm jobs",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -183,9 +208,33 @@ Template variables:
         "--refresh-cache",
         type=int,
         default=20,
-        help="Cache refresh interval in seconds (default: 20)",
+        help="Seconds to reuse accounting (sacct) results and the log index (default: 20)",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--all-users",
+        action="store_true",
+        help="Show every user's jobs (read-only for jobs that are not yours)",
+    )
+    parser.add_argument(
+        "--history-days",
+        type=int,
+        default=7,
+        help="Days of accounting history shown in the job list (default: 7, max: 90)",
+    )
+    parser.add_argument(
+        "--token",
+        default=None,
+        help="Access token to require instead of the generated one "
+        "(or set SLURM_DASHBOARD_TOKEN)",
+    )
+    parser.add_argument(
+        "--no-auth",
+        action="store_true",
+        help="Disable the access token. Anyone who can reach the port can then "
+        "submit and cancel jobs as you",
+    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Log every Slurm command")
+    return parser.parse_args(argv)
 
 
 # Global config instance, set during app initialization

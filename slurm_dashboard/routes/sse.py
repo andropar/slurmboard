@@ -1,55 +1,39 @@
 """Server-Sent Events routes for log streaming."""
 
+from __future__ import annotations
+
 import json
-import time
-from pathlib import Path
+from typing import Iterator
 
 from flask import Blueprint, Response, request, stream_with_context
 
-from slurm_dashboard.config import get_config
-from slurm_dashboard.services.logs import safe_log_path
+from slurm_dashboard.routes.api import locate_log
+from slurm_dashboard.services.logs import tail_events
 
 sse = Blueprint("sse", __name__)
 
 
-def event_stream(target: Path):
-    """Generate SSE events for log file updates."""
-    max_bytes = 200_000
-    try:
-        with target.open("r") as handle:
-            handle.seek(0, 2)
-            file_size = handle.tell()
-            start = max(file_size - max_bytes, 0)
-            handle.seek(start)
-            if start > 0:
-                handle.readline()
-            snapshot = handle.read()
-            position = handle.tell()
-            yield f"data: {json.dumps({'snapshot': snapshot})}\n\n"
-            while True:
-                handle.seek(position)
-                chunk = handle.readline()
-                if chunk:
-                    position = handle.tell()
-                    yield f"data: {json.dumps({'append': chunk})}\n\n"
-                else:
-                    time.sleep(1)
-    except GeneratorExit:
-        return
+def _frame(event: dict) -> str:
+    # Pings are SSE comments: they keep the connection alive without reaching the page.
+    return ": ping\n\n" if event.get("ping") else f"data: {json.dumps(event)}\n\n"
 
 
 @sse.route("/stream_log")
 def stream_log() -> Response:
-    """Stream log file contents via SSE."""
-    log_key = request.args.get("log_key", "")
-    kind = request.args.get("kind", "stdout")
-    if kind not in {"stdout", "stderr"}:
-        return Response("Invalid kind", status=400)
+    """Stream a job's log. Query: log_key (job ID), kind (stdout|stderr).
 
-    config = get_config()
-    path = safe_log_path(log_key, kind, config.log_root, config.log_pattern)
-    if path is None:
-        return Response("Log not found", status=404)
+    A missing log is reported as an ``error`` event rather than an HTTP error,
+    because EventSource cannot read the body of a failed response.
+    """
+    path, message = locate_log(request.args.get("log_key", ""), request.args.get("kind", "stdout"))
 
-    headers = {"Content-Type": "text/event-stream", "Cache-Control": "no-cache"}
-    return Response(stream_with_context(event_stream(path)), headers=headers)
+    def events() -> Iterator[str]:
+        if path is None:
+            yield _frame({"error": message})
+            return
+        yield _frame({"path": str(path)})
+        for event in tail_events(path):
+            yield _frame(event)
+
+    headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    return Response(stream_with_context(events()), mimetype="text/event-stream", headers=headers)

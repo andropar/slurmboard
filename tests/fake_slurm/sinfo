@@ -1,0 +1,2 @@
+#!/bin/sh
+exec "${FAKE_SLURM_PYTHON:-python3}" "$(dirname "$0")/fakeslurm.py" sinfo "$@"
