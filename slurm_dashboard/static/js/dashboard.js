@@ -47,6 +47,15 @@ function fmtTime(value) {
     return isNaN(date) ? String(value) : date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+// Compact time for list rows: "19:37" today, otherwise "10 Nov 19:37".
+function fmtShort(value) {
+    const date = new Date(value);
+    if (!value || isNaN(date)) return '';
+    const clock = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (date.toDateString() === new Date().toDateString()) return clock;
+    return `${date.toLocaleDateString([], { day: 'numeric', month: 'short' })} ${clock}`;
+}
+
 // Status banners (Slurm errors, lost connection), keyed so each can be cleared.
 const banners = {};
 function showBanner(key, message) {
@@ -66,6 +75,44 @@ function renderBanners() {
     el.style.display = messages.length ? 'block' : 'none';
     el.innerHTML = messages.map(m => `<div class="status-banner-item">${esc(m)}</div>`).join('');
 }
+
+// Short-lived messages in the corner, instead of blocking notify() dialogs.
+function notify(message, kind) {
+    const text = String(message);
+    const isError = kind === 'error' || (!kind && /error|could not|cannot|failed|blocked|not available/i.test(text));
+    let host = document.getElementById('toasts');
+    if (!host) {
+        host = document.createElement('div');
+        host.id = 'toasts';
+        host.setAttribute('role', 'status');
+        document.body.appendChild(host);
+    }
+    const toast = document.createElement('div');
+    toast.className = `toast ${isError ? 'toast-error' : ''}`;
+    toast.textContent = text;
+    toast.addEventListener('click', () => toast.remove());
+    host.appendChild(toast);
+    setTimeout(() => toast.remove(), isError ? 9000 : 4500);
+}
+
+const LOG_HINT = 'Choose “out” or “err” on a job to follow its log here.';
+const STATE_LABELS = {
+    RUNNING: 'Running', PENDING: 'Pending', COMPLETED: 'Completed', FAILED: 'Failed',
+    CANCELLED: 'Cancelled', TIMEOUT: 'Timed out', OUT_OF_MEMORY: 'Out of memory',
+    NODE_FAIL: 'Node failed', PREEMPTED: 'Preempted', COMPLETING: 'Finishing',
+    CONFIGURING: 'Starting', SUSPENDED: 'Suspended', REQUEUED: 'Requeued',
+    BOOT_FAIL: 'Boot failed', DEADLINE: 'Deadline', UNKNOWN: 'Logs only',
+};
+function stateLabel(state) {
+    const key = String(state || 'UNKNOWN').toUpperCase().split(/[ +]/)[0];
+    return STATE_LABELS[key] || key.charAt(0) + key.slice(1).toLowerCase().replace(/_/g, ' ');
+}
+// Coloured dot plus a plain word; the word carries the meaning, the dot the scan.
+function stateBadge(job) {
+    const category = job.state_category || 'unknown';
+    return `<span class="state state-${esc(category)}" title="${esc(job.state || 'Only log files were found')}"><i></i>${esc(stateLabel(job.state))}</span>`;
+}
+const lastResourceData = {};
 
 let dashboardMeta = window.DASHBOARD_SETTINGS || {};
 let lastJobsPayload = '';
@@ -162,7 +209,7 @@ const errorPatterns = [
     {
         type: 'oom',
         label: 'Out of Memory',
-        icon: '🔴',
+        icon: 'error',
         patterns: [
             /Killed/i,
             /Out of memory/i,
@@ -176,7 +223,7 @@ const errorPatterns = [
     {
         type: 'traceback',
         label: 'Python Traceback',
-        icon: '🔴',
+        icon: 'error',
         patterns: [
             /Traceback \(most recent call last\)/i
         ],
@@ -186,7 +233,7 @@ const errorPatterns = [
     {
         type: 'cuda',
         label: 'CUDA Error',
-        icon: '🔴',
+        icon: 'error',
         patterns: [
             /CUDA error/i,
             /cudaError/i,
@@ -198,7 +245,7 @@ const errorPatterns = [
     {
         type: 'slurm',
         label: 'Slurm Error',
-        icon: '🟠',
+        icon: 'caution',
         patterns: [
             /DUE TO TIME LIMIT/i,
             /CANCELLED/i,
@@ -209,7 +256,7 @@ const errorPatterns = [
     {
         type: 'segfault',
         label: 'Segmentation Fault',
-        icon: '🔴',
+        icon: 'error',
         patterns: [
             /Segmentation fault/i,
             /core dumped/i,
@@ -219,7 +266,7 @@ const errorPatterns = [
     {
         type: 'permission',
         label: 'Permission Error',
-        icon: '🟠',
+        icon: 'caution',
         patterns: [
             /Permission denied/i,
             /Access denied/i,
@@ -229,7 +276,7 @@ const errorPatterns = [
     {
         type: 'file',
         label: 'File Error',
-        icon: '🟠',
+        icon: 'caution',
         patterns: [
             /No such file or directory/i,
             /File not found/i,
@@ -240,7 +287,7 @@ const errorPatterns = [
     {
         type: 'assertion',
         label: 'Assertion Error',
-        icon: '🔴',
+        icon: 'error',
         patterns: [
             /AssertionError/i,
             /assert.*failed/i
@@ -249,7 +296,7 @@ const errorPatterns = [
     {
         type: 'warning',
         label: 'Warning',
-        icon: '🟡',
+        icon: 'warning',
         patterns: [
             /\bwarning\b/i,
             /DeprecationWarning/i,
@@ -279,7 +326,7 @@ function relativeTime(dateStr) {
 function copyToClipboard(text, btn) {
     navigator.clipboard.writeText(text).then(() => {
         const orig = btn.textContent;
-        btn.textContent = '✓';
+        btn.textContent = 'copied';
         setTimeout(() => btn.textContent = orig, 1000);
     });
 }
@@ -287,7 +334,7 @@ function copyToClipboard(text, btn) {
 function toggleAutoScroll() {
     autoScroll = !autoScroll;
     scrollToggle.classList.toggle('active', autoScroll);
-    scrollToggle.textContent = autoScroll ? 'Auto-scroll' : 'Manual';
+    scrollToggle.textContent = autoScroll ? 'Follow' : 'Paused';
 }
 
 // Watch/notification functions
@@ -311,13 +358,13 @@ async function toggleWatchJob(jobId, jobName) {
     if (Notification.permission === 'default') {
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') {
-            alert('Notifications are blocked. Enable them in browser settings to watch jobs.');
+            notify('Notifications are blocked. Enable them in browser settings to watch jobs.');
             return;
         }
     }
 
     if (Notification.permission !== 'granted') {
-        alert('Notifications are blocked. Enable them in browser settings to watch jobs.');
+        notify('Notifications are blocked. Enable them in browser settings to watch jobs.');
         return;
     }
 
@@ -391,7 +438,7 @@ function sendJobNotification(jobId, jobName, state, runtime) {
     notification.onclick = () => {
         window.focus();
         // Find and highlight the job in recent jobs
-        const rows = document.querySelectorAll('tbody tr');
+        const rows = document.querySelectorAll('[data-log-key]');
         rows.forEach(row => {
             if (row.dataset.logKey && row.dataset.logKey.includes(jobId)) {
                 row.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -411,7 +458,7 @@ function toggleSelectForCompare(logKey, event) {
         selectedForCompare.delete(logKey);
     } else {
         if (selectedForCompare.size >= 4) {
-            alert('Maximum 4 jobs can be compared at once');
+            notify('Maximum 4 jobs can be compared at once');
             return;
         }
         selectedForCompare.add(logKey);
@@ -877,7 +924,7 @@ function renderErrorSummary() {
 
         html += `
             <div class="error-summary-item" data-type="${type}">
-                <span class="error-icon">${group.icon}</span>
+                <span class="sev-dot sev-${group.icon}"></span>
                 <div class="error-info">
                     <span class="error-type">${group.label}</span>
                     ${totalCount > count ? `<span class="error-count">(×${totalCount})</span>` : count > 1 ? `<span class="error-count">(×${count})</span>` : ''}
@@ -1224,42 +1271,27 @@ function userTag(job) {
 }
 
 async function toggleJobDetails(jobId) {
-    const detailsRow = document.getElementById(`details-${jobId}`);
-    const expandBtn = document.querySelector(`[data-job-id="${jobId}"]`);
-
     if (expandedJobs.has(jobId)) {
         expandedJobs.delete(jobId);
-        if (detailsRow) detailsRow.remove();
-        if (expandBtn) expandBtn.textContent = '▸';
-    } else {
-        expandedJobs.add(jobId);
-        if (expandBtn) expandBtn.textContent = '▾';
-
-        if (!jobDetails[jobId]) {
-            try {
-                const res = await fetch(`/api/job_details/${encodeURIComponent(jobId)}`);
-                if (res.ok) {
-                    jobDetails[jobId] = await res.json();
-                }
-            } catch (err) {
-                console.error(err);
-            }
-        }
-
         renderRunning(filterJobs(allRunningJobs));
-        renderRecent(filterJobs(allRecentJobs));
-
-        // Load live resource data for running jobs
-        const job = allRunningJobs.find(j => j.id === jobId);
-        if (job && job.state && job.state.toLowerCase().includes('running')) {
-            loadResourceData(jobId);
-        }
-
-        // Load submission info for resubmit feature
-        if (!jobSubmitInfo[jobId]) {
-            loadSubmitInfo(jobId);
-        }
+        return;
     }
+    expandedJobs.add(jobId);
+    renderRunning(filterJobs(allRunningJobs));
+
+    if (!jobDetails[jobId]) {
+        try {
+            const res = await fetch(`/api/job_details/${encodeURIComponent(jobId)}`);
+            if (res.ok) jobDetails[jobId] = await res.json();
+        } catch (err) {
+            console.error(err);
+        }
+        renderRunning(filterJobs(allRunningJobs));
+    }
+
+    const job = allRunningJobs.find(j => j.id === jobId);
+    if (job && job.state_category === 'running') loadResourceData(jobId);
+    if (!jobSubmitInfo[jobId]) loadSubmitInfo(jobId);
 }
 
 function getEfficiencyClass(value) {
@@ -1272,7 +1304,7 @@ function getEfficiencyClass(value) {
 
 function renderDetailsRow(job, colspan) {
     const details = jobDetails[job.id];
-    if (!details) return '';
+    if (!details) return '<div class="job-details-loading">Loading details...</div>';
 
     const isRunning = job.state_category === 'running';
     const submitInfo = jobSubmitInfo[job.id];
@@ -1287,8 +1319,6 @@ function renderDetailsRow(job, colspan) {
         </div>`;
 
     return `
-        <tr class="details-row" id="details-${esc(job.id)}">
-            <td colspan="${colspan}">
                 <div class="details-content">
                     ${item('Partition', job.partition)}
                     ${item('Resources', [job.cpus ? `${job.cpus} CPU` : '', job.gres, details.req_mem].filter(Boolean).join(' · '))}
@@ -1314,8 +1344,6 @@ function renderDetailsRow(job, colspan) {
                         `}
                     </div>
                 </div>
-            </td>
-        </tr>
     `;
 }
 
@@ -1364,7 +1392,7 @@ async function viewScript(jobId) {
         const data = await res.json();
 
         if (data.error) {
-            alert('Could not load script: ' + data.error);
+            notify('Could not load script: ' + data.error);
             return;
         }
         const note = data.source === 'slurm'
@@ -1372,7 +1400,7 @@ async function viewScript(jobId) {
             : `Current file on disk (${data.path}); it may have changed since submission`;
         showScriptModal(`Script of ${jobLabel(jobId)}`, data.content, note);
     } catch (err) {
-        alert('Error loading script');
+        notify('Error loading script');
     }
 }
 
@@ -1418,14 +1446,14 @@ async function openResubmit(jobId) {
         await ensureSubmitInfo(jobId);
         showResubmitDialog(jobId);
     } catch (err) {
-        alert('Could not load submission info');
+        notify('Could not load submission info');
     }
 }
 
 function showResubmitDialog(jobId) {
     const info = jobSubmitInfo[jobId];
     if (!info || info.error) {
-        alert('Cannot resubmit: ' + ((info && info.error) || 'submission info not available'));
+        notify('Cannot resubmit: ' + ((info && info.error) || 'submission info not available'));
         return;
     }
 
@@ -1556,6 +1584,7 @@ async function loadResourceData(jobId) {
         if (!resourceHistory[jobId]) {
             resourceHistory[jobId] = [];
         }
+        lastResourceData[jobId] = data;
         resourceHistory[jobId].push({
             time: Date.now(),
             max_rss: data.max_rss,
@@ -1579,8 +1608,15 @@ function renderResourceChart(jobId, data) {
     const history = resourceHistory[jobId] || [];
 
     // Parse memory values for display
-    const maxRss = data.max_rss || 'N/A';
-    const aveRss = data.ave_rss || 'N/A';
+    // sstat reports kilobytes ("23701626K"); show a readable unit.
+    const fmtMem = value => {
+        const match = /^([\d.]+)([KMGT]?)$/i.exec(value || '');
+        if (!match) return value || 'N/A';
+        const bytes = parseFloat(match[1]) * ({ K: 1024, M: 1024 ** 2, G: 1024 ** 3, T: 1024 ** 4 }[match[2].toUpperCase()] || 1024);
+        return bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : `${Math.round(bytes / 1024 ** 2)} MB`;
+    };
+    const maxRss = fmtMem(data.max_rss);
+    const aveRss = fmtMem(data.ave_rss);
 
     // Generate mini chart SVG if we have history
     let chartHtml = '';
@@ -1589,19 +1625,19 @@ function renderResourceChart(jobId, data) {
     }
 
     container.innerHTML = `
-        <div class="detail-label">Live Resources</div>
+        <div class="detail-label">Live usage</div>
         <div class="resource-metrics">
             <div class="resource-metric">
-                <span class="resource-label">Max Memory:</span>
+                <span class="resource-label">Peak memory</span>
                 <span class="resource-value">${esc(maxRss)}</span>
             </div>
             <div class="resource-metric">
-                <span class="resource-label">Avg Memory:</span>
+                <span class="resource-label">Average memory</span>
                 <span class="resource-value">${esc(aveRss)}</span>
             </div>
             ${data.ntasks ? `
             <div class="resource-metric">
-                <span class="resource-label">Tasks:</span>
+                <span class="resource-label">Tasks</span>
                 <span class="resource-value">${esc(data.ntasks)}</span>
             </div>
             ` : ''}
@@ -1891,60 +1927,73 @@ function formatHours(hours) {
     return hours.toFixed(1);
 }
 
+// One row component for both lists: name and ID on the left, then state,
+// time and actions. `kind` is 'running' (active jobs) or 'recent' (finished).
+function jobRowHtml(job, kind) {
+    const active = kind === 'running';
+    const selected = (active ? selectedRunningJobs : selectedRecentJobs).has(job.id);
+    const expanded = expandedJobs.has(job.id);
+    const watched = active && isJobWatched(job.id);
+    const id = esc(job.id);
+    const idArg = jsArg(job.id);
+    const toggle = active ? `toggleJobDetails(${idArg})` : `toggleJobExpand(${idArg})`;
+
+    // Second line: ID, owner (all-users mode) and what Slurm says about a waiting job.
+    const sub = [`<span class="job-id" onclick="event.stopPropagation(); copyToClipboard(${idArg}, this)" title="Copy job ID">${id}</span>`];
+    if (dashboardMeta.all_users && job.user) sub.push(`<span class="user-tag" title="Owner">${esc(job.user)}</span>`);
+    if (job.partition) sub.push(`<span>${esc(job.partition)}</span>`);
+    if (active && job.state_category === 'pending') {
+        if (job.expected_start) sub.push(`<span title="Start time planned by the scheduler">starts ${esc(fmtShort(job.expected_start))}</span>`);
+        else if (job.reason) sub.push(`<span title="Why Slurm has not started this job">${esc(job.reason)}</span>`);
+    }
+
+    const time = active
+        ? `<span class="job-time" title="Runtime (limit ${esc(job.limit)})">${esc(job.runtime)}</span>`
+        : `<span class="job-time" title="${esc(fmtTime(job.updated))}">${job.updated ? esc(relativeTime(job.updated)) : ''}</span>`;
+
+    let details = '';
+    if (expanded) {
+        details = active
+            ? renderDetailsRow(job, 0)
+            : (recentDetailsHtml[job.id] || '<div class="job-details-loading">Loading details...</div>');
+    }
+
+    return `
+    <div class="job-row ${currentLogKey === job.log_key ? 'active-log' : ''} ${selected ? 'batch-selected' : ''} ${expanded ? 'expanded' : ''} ${watched ? 'watched-job' : ''}" data-log-key="${id}" data-job-id="${id}">
+        <div class="job-row-main">
+            <input type="checkbox" class="job-checkbox" aria-label="Select job ${id}" ${selected ? 'checked' : ''} ${active && !job.owned ? 'disabled' : ''} onchange="toggleJobSelection('${kind}', ${idArg}, this.checked)">
+            <div class="job-info" onclick="${toggle}">
+                <span class="job-name" title="${esc(job.name)}">${esc(job.name)}</span>
+                <span class="job-sub">${sub.join('<span class="sep">·</span>')}</span>
+            </div>
+            ${stateBadge(job)}
+            ${time}
+            <div class="job-actions">
+                <button class="log-btn" onclick="openLog(${idArg},'stdout')" title="Follow stdout">out</button>
+                <button class="log-btn" onclick="openLog(${idArg},'stderr')" title="Follow stderr">err</button>
+                ${active && job.owned ? `<button class="log-btn log-btn-danger" onclick="cancelJob(${idArg})" title="Cancel this job">cancel</button>` : ''}
+                ${active ? `<button class="watch-btn ${watched ? 'watching' : ''}" onclick="toggleWatchJob(${idArg}, ${jsArg(job.name)})" title="${watched ? 'Stop notifying' : 'Notify me when this job ends'}" aria-pressed="${watched}">${watched ? '★' : '☆'}</button>` : ''}
+                <button class="expand-btn" onclick="${toggle}" title="Details" aria-expanded="${expanded}">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+            </div>
+        </div>
+        <div class="job-row-details" id="job-details-${id}">${details}</div>
+    </div>`;
+}
+
 function renderRunning(rows) {
     if (!rows.length) {
-        const why = allRunningJobs.length ? 'No active jobs match the filters.' : 'No running or pending jobs.';
-        runningBody.innerHTML = `<tr><td colspan="5"><div class="empty-state">${why}</div></td></tr>`;
-        updateBatchActionsVisibility('running');
-        return;
-    }
-    runningBody.innerHTML = rows.map(job => {
-        const watched = isJobWatched(job.id);
-        const isPending = job.state_category === 'pending';
-        const isSelected = selectedRunningJobs.has(job.id);
-        const id = esc(job.id);
-        const idArg = jsArg(job.id);
-
-        // What Slurm itself reports about a waiting job: reason and planned start.
-        let queueDisplay = '';
-        if (isPending && (job.reason || job.expected_start)) {
-            queueDisplay = `
-                <div class="queue-info">
-                    ${job.reason ? `<span class="queue-position" title="Why Slurm has not started this job">${esc(job.reason)}</span>` : ''}
-                    ${job.expected_start ? `<span class="queue-wait confidence-high" title="Start time planned by the scheduler">starts ${esc(fmtTime(job.expected_start))}</span>` : ''}
-                </div>
-            `;
+        const why = allRunningJobs.length ? 'No active jobs match the filters.' : 'Nothing running or pending.';
+        runningBody.innerHTML = `<div class="empty-state">${why}</div>`;
+    } else {
+        runningBody.innerHTML = rows.map(job => jobRowHtml(job, 'running')).join('');
+        for (const jobId of expandedJobs) {
+            if (lastResourceData[jobId]) renderResourceChart(jobId, lastResourceData[jobId]);
         }
-
-        return `
-        <tr class="${currentLogKey === job.log_key ? 'active-log' : ''} ${watched ? 'watched-job' : ''} ${isSelected ? 'batch-selected' : ''}" data-log-key="${id}" data-job-id="${id}">
-            <td class="select-col">
-                <input type="checkbox" class="batch-select" ${isSelected ? 'checked' : ''} ${job.owned ? '' : 'disabled'} onchange="toggleJobSelection('running', ${idArg}, this.checked)">
-            </td>
-            <td class="job-cell col-main">
-                <div class="job-main-top">
-                    <span class="expand-btn" data-job-id="${id}" onclick="toggleJobDetails(${idArg})">${expandedJobs.has(job.id) ? '▾' : '▸'}</span>
-                    <span class="metric">${id}</span>
-                    <button class="copy-btn" onclick="copyToClipboard(${idArg}, this)">⎘</button>
-                    <button class="watch-btn ${watched ? 'watching' : ''}" onclick="toggleWatchJob(${idArg}, ${jsArg(job.name)})" title="${watched ? 'Stop watching' : 'Notify me when this job ends'}">
-                        ${watched ? '★' : '☆'}
-                    </button>
-                    ${userTag(job)}
-                </div>
-                <div class="job-main-name" title="${esc(job.name)}">${esc(job.name)}</div>
-                ${queueDisplay}
-            </td>
-            <td class="col-state"><span class="status-badge ${getStatusClass(job.state)}" title="${esc(job.state)}">${esc(formatStateShort(job.state))}</span></td>
-            <td class="col-runtime"><span class="metric" title="Limit ${esc(job.limit)}">${esc(job.runtime)}</span></td>
-            <td class="col-actions">
-                <button onclick="openLog(${idArg},'stdout')">stdout</button>
-                <button onclick="openLog(${idArg},'stderr')">stderr</button>
-                ${job.owned ? `<button onclick="cancelJob(${idArg})" style="background: var(--status-failed-bg); color: var(--status-failed-text);">cancel</button>` : ''}
-            </td>
-        </tr>
-        ${expandedJobs.has(job.id) ? renderDetailsRow(job, 5) : ''}`;
-    }).join('');
+    }
     updateBatchActionsVisibility('running');
+    updateSelectAllCheckbox('running');
 }
 
 function renderRecent(rows) {
@@ -1953,40 +2002,11 @@ function renderRecent(rows) {
             ? 'No finished jobs match the filters.'
             : `No finished jobs in the last ${dashboardMeta.history_days || 7} days.`;
         recentBody.innerHTML = `<div class="empty-state">${why}</div>`;
-        updateBatchActionsVisibility('recent');
-        return;
+    } else {
+        recentBody.innerHTML = rows.map(job => jobRowHtml(job, 'recent')).join('');
     }
-    recentBody.innerHTML = rows.map(job => {
-        const isSelected = selectedRecentJobs.has(job.id);
-        const stateClass = `state-${esc((job.state_category === 'failed' ? 'failed' : job.state || 'unknown').toLowerCase())}`;
-        const isActive = currentLogKey === job.log_key;
-        const isExpanded = expandedJobs.has(job.id);
-        const id = esc(job.id);
-        const idArg = jsArg(job.id);
-        return `
-        <div class="job-row ${isActive ? 'active-log' : ''} ${isSelected ? 'batch-selected' : ''} ${isExpanded ? 'expanded' : ''}" data-log-key="${id}" data-job-id="${id}">
-            <div class="job-row-main">
-                <input type="checkbox" class="job-checkbox" ${isSelected ? 'checked' : ''} onchange="toggleJobSelection('recent', ${idArg}, this.checked)">
-                <div class="job-info" onclick="toggleJobExpand(${idArg})">
-                    <span class="job-name" title="${esc(job.name)}">${esc(job.name)}</span>
-                    <span class="job-state-badge ${stateClass}" title="${esc(job.state || 'Unknown: only log files were found')}">${esc(formatStateShort(job.state || 'UNKNOWN'))}</span>
-                    <span class="job-id" onclick="event.stopPropagation(); copyToClipboard(${idArg}, this)" title="Click to copy">${id}</span>
-                    ${userTag(job)}
-                    <span class="job-time" title="${esc(fmtTime(job.updated))}">${job.updated ? relativeTime(job.updated) : ''}</span>
-                </div>
-                <div class="job-actions">
-                    <button class="log-btn" onclick="event.stopPropagation(); openLog(${idArg},'stdout')" title="View stdout">out</button>
-                    <button class="log-btn log-btn-err" onclick="event.stopPropagation(); openLog(${idArg},'stderr')" title="View stderr">err</button>
-                    <button class="expand-btn" onclick="toggleJobExpand(${idArg})" title="Toggle details">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-                    </button>
-                </div>
-            </div>
-            <div class="job-row-details" id="job-details-${id}">
-                ${isExpanded && recentDetailsHtml[job.id] ? recentDetailsHtml[job.id] : '<div class="job-details-loading">Loading details...</div>'}
-            </div>
-        </div>`;
-    }).join('');
+    const count = document.getElementById('stat-recent');
+    if (count) count.textContent = rows.length === allRecentJobs.length ? rows.length : `${rows.length} of ${allRecentJobs.length}`;
     updateBatchActionsVisibility('recent');
 }
 
@@ -2005,7 +2025,11 @@ async function toggleJobExpand(jobId) {
     }
     rowEl.classList.add('expanded');
     expandedJobs.add(jobId);
-    if (recentDetailsHtml[jobId]) return;
+    if (recentDetailsHtml[jobId]) {
+        detailsEl.innerHTML = recentDetailsHtml[jobId];
+        return;
+    }
+    detailsEl.innerHTML = '<div class="job-details-loading">Loading details...</div>';
 
     try {
         const res = await fetch(`/api/job_details/${encodeURIComponent(jobId)}`);
@@ -2057,11 +2081,11 @@ async function cancelJob(jobId) {
             await fetchJobs();
         } else {
             const data = await res.json().catch(() => ({}));
-            alert(`Could not cancel job ${jobId}: ${data.error || `HTTP ${res.status}`}`);
+            notify(`Could not cancel job ${jobId}: ${data.error || `HTTP ${res.status}`}`);
         }
     } catch (err) {
         console.error(err);
-        alert('Error canceling job: the dashboard server did not respond');
+        notify('Error canceling job: the dashboard server did not respond');
     }
 }
 
@@ -2076,7 +2100,7 @@ function openLog(logKey, kind) {
     if (typeof currentView !== 'undefined' && currentView !== 'table') setView('table');
     currentLogKey = logKey;
     currentLogKind = kind;
-    logTitle.textContent = `Logs: ${jobLabel(logKey)} (${kind})`;
+    logTitle.textContent = `${jobLabel(logKey)} · ${kind}`;
     logTitle.title = '';
     showLogMessage('Loading…');
     dismissedErrors = new Set();
@@ -2240,9 +2264,10 @@ document.addEventListener('keydown', (e) => {
             logStream = null;
             currentLogKey = null;
             originalLogContent = '';
-            logTitle.textContent = 'Logs';
-            logPanel.textContent = '';
-            document.querySelectorAll('tbody tr').forEach(row => {
+            logTitle.textContent = 'Log';
+            logTitle.title = '';
+            showLogMessage(LOG_HINT);
+            document.querySelectorAll('[data-log-key]').forEach(row => {
                 row.classList.remove('active-log');
             });
         }
@@ -2325,7 +2350,7 @@ async function loadTimelineData() {
         filterTimeline();
     } catch (err) {
         console.error('Timeline load error:', err);
-        container.innerHTML = `<div class="timeline-empty"><div class="timeline-empty-icon">⚠️</div><div class="timeline-empty-text">Failed to load job history${err && err.message ? ': ' + esc(err.message) : ''}</div></div>`;
+        container.innerHTML = `<div class="timeline-empty"><div class="timeline-empty-text">Failed to load job history${err && err.message ? ': ' + esc(err.message) : ''}</div></div>`;
     }
 }
 
@@ -2444,7 +2469,7 @@ function renderTimeline() {
     const container = document.getElementById('timeline-container');
 
     if (filteredTimelineData.length === 0) {
-        container.innerHTML = '<div class="timeline-empty"><div class="timeline-empty-icon">📊</div><div class="timeline-empty-text">No jobs found for the selected filters</div></div>';
+        container.innerHTML = '<div class="timeline-empty"><div class="timeline-empty-text">No jobs found for the selected filters</div></div>';
         return;
     }
 
@@ -2874,7 +2899,7 @@ function renderDagGraph(pipelineIdx) {
                 <div class="dag-node ${stateClass}" data-job-id="${esc(node.id)}" onclick="showDagNodeDetails('${esc(node.id)}')" title="${esc(node.name)} (${esc(node.state)})">
                     <div class="dag-node-name">${esc(node.name)}</div>
                     <div class="dag-node-id">#${esc(node.id)}</div>
-                    <div class="dag-node-state">${esc(node.state)}</div>
+                    <div class="dag-node-state">${esc(stateLabel(node.state))}${node.tasks > 1 ? ` · ${node.tasks} tasks` : ''}</div>
                 </div>
             `;
         });
@@ -3178,7 +3203,6 @@ function renderInsights() {
             const time = insightsData.time_insights;
             html += `
                 <div class="recommendation-item">
-                    <span class="rec-icon">⏱️</span>
                     <div class="rec-content">
                         <div class="rec-text">${esc(time.recommendation)}</div>
                         <div class="rec-meta">Based on ${time.sample_count} jobs</div>
@@ -3190,7 +3214,6 @@ function renderInsights() {
             const mem = insightsData.memory_insights;
             html += `
                 <div class="recommendation-item">
-                    <span class="rec-icon">💾</span>
                     <div class="rec-content">
                         <div class="rec-text">${esc(mem.recommendation)}</div>
                         <div class="rec-meta">Based on ${mem.sample_count} jobs</div>
@@ -3229,7 +3252,7 @@ function renderInsights() {
         html += `
             <div class="insight-card alerts-card">
                 <div class="insight-content">
-                    <div class="insight-title">⚠️ Failure Alerts</div>
+                    <div class="insight-title">Failure alerts</div>
                     <div class="alerts-list">
                         ${insightsData.failure_patterns.slice(0, 3).map(pattern => {
                             const failRate = pattern.failure_rate;
@@ -3669,7 +3692,7 @@ async function openJobDetailsModal(jobId) {
                     <div class="detail-row">
                         <span class="detail-label">State</span>
                         <span class="detail-value">
-                            ${details.state || job.state ? `<span class="job-state-badge state-${(details.state || job.state || '').toLowerCase().split(' ')[0]}">${formatStateShort(details.state || job.state)}</span>` : 'N/A'}
+                            ${stateBadge({ state: details.state || job.state, state_category: job.state_category })}
                         </span>
                     </div>
                     ${details.exit_code ? `
@@ -3805,7 +3828,7 @@ async function submitJob() {
     }
 
     if (!scriptPath && !finalScriptContent) {
-        alert('Please provide a script path or script content');
+        notify('Please provide a script path or script content');
         return;
     }
 
@@ -3832,18 +3855,17 @@ async function submitJob() {
         const data = await res.json();
 
         if (data.error) {
-            alert('Error submitting job: ' + data.error);
+            notify('Error submitting job: ' + data.error);
             return;
         }
 
         closeSubmitModal();
         lastJobsPayload = '';
         fetchJobs(); // Refresh job list
-        showBanner('submitted', `Submitted job ${data.job_id}.`);
-        setTimeout(() => clearBanner('submitted'), 6000);
+        notify(`Submitted job ${data.job_id}.`);
     } catch (err) {
         console.error('Submit error:', err);
-        alert('Error submitting job');
+        notify('Error submitting job');
     }
 }
 
@@ -3862,7 +3884,7 @@ async function confirmSaveTemplate() {
     const description = document.getElementById('template-description').value.trim();
 
     if (!name) {
-        alert('Please enter a template name');
+        notify('Please enter a template name');
         return;
     }
 
@@ -3889,16 +3911,16 @@ async function confirmSaveTemplate() {
         const data = await res.json();
 
         if (data.error) {
-            alert('Error saving template: ' + data.error);
+            notify('Error saving template: ' + data.error);
             return;
         }
 
-        alert('Template saved successfully!');
+        notify('Template saved successfully!');
         closeSaveTemplateModal();
         loadTemplates();
     } catch (err) {
         console.error('Template save error:', err);
-        alert('Error saving template');
+        notify('Error saving template');
     }
 }
 
@@ -3961,14 +3983,14 @@ async function deleteTemplate(templateId) {
         const data = await res.json();
 
         if (data.error) {
-            alert('Error deleting template: ' + data.error);
+            notify('Error deleting template: ' + data.error);
             return;
         }
 
         loadTemplates();
     } catch (err) {
         console.error('Template delete error:', err);
-        alert('Error deleting template');
+        notify('Error deleting template');
     }
 }
 
@@ -4099,9 +4121,9 @@ async function batchCancel(tableType) {
     fetchJobs();
 
     if (failed > 0) {
-        alert(`Cancelled ${succeeded} job(s). ${failed} failed.`);
+        notify(`Cancelled ${succeeded} job(s). ${failed} failed.`);
     } else {
-        alert(`Successfully cancelled ${succeeded} job(s).`);
+        notify(`Successfully cancelled ${succeeded} job(s).`);
     }
 }
 
@@ -4141,7 +4163,7 @@ async function batchResubmit(tableType) {
     let msg = `Resubmitted ${succeeded} job(s).`;
     if (failed > 0) msg += ` ${failed} failed.`;
     lastJobsPayload = '';
-    alert(msg);
+    notify(msg);
 }
 
 function batchExport(tableType) {
@@ -4473,7 +4495,7 @@ function saveCurrentSearch() {
         Object.values(advancedFilters).some(v => v);
 
     if (!hasFilters) {
-        alert('No filters to save. Apply some filters first.');
+        notify('No filters to save. Apply some filters first.');
         return;
     }
 

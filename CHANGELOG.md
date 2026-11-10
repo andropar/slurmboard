@@ -27,6 +27,9 @@ The data layer was rebuilt so that Slurm, not the log directory, is the source o
 - Test suite running against a fake Slurm CLI.
 
 ### Changed
+- Redesigned interface: white page, hairline rules, one type family, colour only for job state. Light and dark themes; usable on narrow screens.
+- Active and finished jobs share one compact row layout in a single scrolling column. States are written out ("Out of memory" instead of "OOM"). Column sorting on the active-jobs table is gone; use search and filters.
+- Notifications appear as short messages in the corner instead of blocking dialogs.
 - One `squeue` and one `sacct` result are cached and shared by all views and tabs; polling pauses while the tab is hidden.
 - Script text is submitted through stdin; no temporary files.
 - API: `/api/script_content?path=` is replaced by `/api/job_script/<job_id>`; `/api/resubmit` takes `job_id` instead of `script_path`; `/api/cost` is now `/api/usage`; `log_key` is the job ID.

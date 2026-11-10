@@ -5,60 +5,49 @@
     <title>Slurm Dashboard</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ version }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}?v={{ version }}">
 </head>
 <body>
-    <div class="header-row">
+    <header class="header-row">
         <div class="header-meta">
-            <span class="last-updated-label">Updated</span>
-            <span class="last-updated-value" id="last-updated">–</span>
-            <span class="scope-label" id="scope-label" title="Whose jobs are shown">{{ 'all users' if settings.all_users else settings.user }}</span>
+            <span class="wordmark">Slurm Dashboard</span>
+            <span class="app-meta">
+                <span id="scope-label" title="Whose jobs are shown">{{ 'all users' if settings.all_users else settings.user }}</span>
+                <span class="sep">·</span>
+                <span title="Last refresh">updated <span class="last-updated-value" id="last-updated">–</span></span>
+            </span>
         </div>
+        <nav class="view-toggle" aria-label="Views">
+            <button class="view-btn active" id="view-table-btn" onclick="setView('table')">Jobs</button>
+            <button class="view-btn" id="view-timeline-btn" onclick="setView('timeline')">Timeline</button>
+            <button class="view-btn" id="view-dag-btn" onclick="setView('dag')">Pipelines</button>
+            <button class="view-btn" id="view-heatmap-btn" onclick="setView('heatmap')">Activity</button>
+            <button class="view-btn" id="view-insights-btn" onclick="setView('insights')">Insights</button>
+        </nav>
         <div class="header-controls">
-            <button class="quick-submit-btn" onclick="openSubmitModal()" title="Submit new job (Ctrl+N)">+ Submit</button>
-            <button class="templates-btn" onclick="openTemplateModal()" title="Manage templates">Templates</button>
-            <div class="view-toggle">
-                <button class="view-btn active" id="view-table-btn" onclick="setView('table')" title="Table view">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
-                    Table
-                </button>
-                <button class="view-btn" id="view-timeline-btn" onclick="setView('timeline')" title="Timeline view">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="3"/><path d="M4 12h8v-4h8"/><path d="M4 18h4v-3h8"/><path d="M4 6h12v3"/></svg>
-                    Timeline
-                </button>
-                <button class="view-btn" id="view-dag-btn" onclick="setView('dag')" title="Pipeline DAG view">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="6" r="3"/><circle cx="19" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="5" y1="9" x2="12" y2="15"/><line x1="19" y1="9" x2="12" y2="15"/></svg>
-                    Pipelines
-                </button>
-                <button class="view-btn" id="view-heatmap-btn" onclick="setView('heatmap')" title="Activity heatmaps">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                    Heatmap
-                </button>
-                <button class="view-btn" id="view-insights-btn" onclick="setView('insights')" title="Job insights & analytics">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/><path d="M12 2a10 10 0 0 1 10 10"/></svg>
-                    Insights
-                </button>
-            </div>
             <div class="search-wrapper">
-                <input type="text" class="search-box" id="search-box" placeholder="Search jobs... (/)">
-                <button class="filter-toggle" id="filter-toggle" onclick="toggleAdvancedFilters()" title="Advanced filters">
-                    <span class="filter-icon">&#9660;</span>
+                <input type="search" class="search-box" id="search-box" placeholder="Search jobs  /" aria-label="Search jobs">
+                <button class="filter-toggle" id="filter-toggle" onclick="toggleAdvancedFilters()" title="More filters" aria-label="More filters">
+                    <span class="filter-icon">Filters</span>
                 </button>
             </div>
-            <button class="theme-toggle" id="theme-toggle" title="Toggle dark mode">
+            <button class="templates-btn" onclick="openTemplateModal()">Templates</button>
+            <button class="quick-submit-btn" onclick="openSubmitModal()" title="Submit a job (Ctrl+N)">Submit job</button>
+            <button class="theme-toggle" id="theme-toggle" title="Switch light / dark" aria-label="Switch light / dark">
                 <span class="theme-icon-light">&#9790;</span>
                 <span class="theme-icon-dark">&#9788;</span>
             </button>
         </div>
-    </div>
+    </header>
     <div class="status-banner" id="status-banner" role="status" style="display: none;"></div>
     <!-- Quick Filter Chips & Advanced Filters -->
     <div class="filter-bar" id="filter-bar">
         <div class="quick-filters">
-            <span class="quick-filter-label">Quick:</span>
+            <span class="quick-filter-label">Show</span>
             <button class="filter-chip" data-filter="failed" onclick="toggleQuickFilter('failed')">Failed</button>
             <button class="filter-chip" data-filter="today" onclick="toggleQuickFilter('today')">Today</button>
             <button class="filter-chip" data-filter="gpu" onclick="toggleQuickFilter('gpu')">GPU</button>
-            <button class="filter-chip" data-filter="long" onclick="toggleQuickFilter('long')">Long-running</button>
+            <button class="filter-chip" data-filter="long" onclick="toggleQuickFilter('long')">Over 1 h</button>
             <button class="filter-chip" data-filter="pending" onclick="toggleQuickFilter('pending')">Pending</button>
         </div>
         <div class="saved-searches-dropdown">
@@ -127,11 +116,9 @@
             <div class="card widget running-wrapper" id="running-panel" data-widget="running">
                 <div class="widget-header table-header-row">
                     <div class="table-header-left">
-                        <h2 style="margin-bottom: 0;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10,8 16,12 10,16 10,8"/></svg>Active Jobs</h2>
-                        <div class="stat-badge">
-                            <span>In queue</span>
-                            <span class="stat-num" id="stat-running">0</span>
-                        </div>
+                        <input type="checkbox" id="select-all-running" onchange="toggleSelectAll('running', this.checked)" title="Select all active jobs" aria-label="Select all active jobs">
+                        <h2>Active</h2>
+                        <span class="count" id="stat-running">0</span>
                     </div>
                     <div class="table-header-right">
                         <div class="batch-actions" id="running-batch-actions" style="display: none;">
@@ -140,30 +127,19 @@
                             <button class="batch-btn batch-export" onclick="batchExport('running')">Export</button>
                             <button class="batch-btn-clear" onclick="clearSelection('running')" title="Clear selection">&times;</button>
                         </div>
-                        <div class="widget-controls">
-                            <button class="widget-minimize" onclick="toggleWidgetMinimize('running-panel')" title="Minimize">−</button>
-                        </div>
                     </div>
                 </div>
-                <div class="running-table-scroll">
-                    <table id="running-table">
-                        <thead>
-                            <tr>
-                                <th class="select-col"><input type="checkbox" id="select-all-running" onchange="toggleSelectAll('running', this.checked)" title="Select all"></th>
-                                <th class="job-col sortable col-main" data-sort="name">Job</th>
-                                <th class="sortable col-state" data-sort="state">State</th>
-                                <th class="sortable col-runtime" data-sort="runtime">Runtime</th>
-                                <th class="col-actions">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="running-body"><tr><td colspan="5"><div class="empty-state">Loading…</div></td></tr></tbody>
-                    </table>
+                <div class="widget-content">
+                    <div class="compact-job-list" id="running-body">
+                        <div class="empty-state">Loading…</div>
+                    </div>
                 </div>
             </div>
             <div class="card widget recent-wrapper" id="recent-panel" data-widget="recent">
                 <div class="widget-header recent-header">
                     <div class="recent-header-left">
-                        <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>Finished Jobs</h2>
+                        <h2>Finished</h2>
+                        <span class="count" id="stat-recent"></span>
                         <span class="recent-window" id="recent-window">last {{ settings.history_days }} days</span>
                         <button class="compare-btn" id="compare-btn" onclick="startComparison()" style="display: none;">Compare</button>
                     </div>
@@ -173,9 +149,6 @@
                             <button class="batch-btn batch-resubmit" onclick="batchResubmit('recent')">Resubmit</button>
                             <button class="batch-btn batch-export" onclick="batchExport('recent')">Export</button>
                             <button class="batch-btn-clear" onclick="clearSelection('recent')" title="Clear selection">&times;</button>
-                        </div>
-                        <div class="widget-controls">
-                            <button class="widget-minimize" onclick="toggleWidgetMinimize('recent-panel')" title="Minimize">−</button>
                         </div>
                     </div>
                 </div>
@@ -188,7 +161,7 @@
         </div>
         <div class="card widget" id="log-panel" data-widget="logs">
             <div class="widget-header log-header">
-                <h2 id="log-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>Logs</h2>
+                <h2 id="log-title">Log</h2>
                 <div class="log-controls">
                     <div class="annotation-nav" id="annotation-nav">
                         <span class="annotation-count" id="annotation-count"></span>
@@ -196,7 +169,7 @@
                         <button class="annotation-nav-btn" id="annotation-next" onclick="navigateAnnotation('next')" title="Next annotation">&rarr;</button>
                     </div>
                     <div class="log-search-wrapper" id="log-search-wrapper">
-                        <input type="text" class="log-search-input" id="log-search-input" placeholder="Search log... (Ctrl+G)">
+                        <input type="search" class="log-search-input" id="log-search-input" placeholder="Search log" aria-label="Search log">
                         <div class="log-search-controls">
                             <span class="log-search-count" id="log-search-count"></span>
                             <button class="log-search-btn" id="log-search-prev" title="Previous match">&uarr;</button>
@@ -204,13 +177,10 @@
                             <button class="log-search-btn" id="log-search-close" title="Close search">&times;</button>
                         </div>
                     </div>
-                    <button class="scroll-toggle active" id="scroll-toggle" onclick="toggleAutoScroll()">Auto-scroll</button>
-                    <div class="widget-controls">
-                        <button class="widget-minimize" onclick="toggleWidgetMinimize('log-panel')" title="Minimize">−</button>
-                    </div>
+                    <button class="scroll-toggle active" id="scroll-toggle" onclick="toggleAutoScroll()" title="Keep the newest output in view">Follow</button>
                 </div>
             </div>
-            <pre id="log-content"></pre>
+            <pre id="log-content"><div class="log-message">Choose “out” or “err” on a job to follow its log here.</div></pre>
         </div>
     </div>
     <div class="timeline-view" id="timeline-view" style="display: none;">
@@ -280,8 +250,7 @@
             </div>
             <div class="dag-main" id="dag-main">
                 <div class="dag-empty">
-                    <div class="dag-empty-icon">🔗</div>
-                    <div class="dag-empty-text">Select a pipeline to view its dependency graph</div>
+                                        <div class="dag-empty-text">Select a pipeline to view its dependency graph</div>
                     <div class="dag-empty-hint">Pipelines are jobs connected by dependencies (afterok, afterany, etc.)</div>
                 </div>
             </div>
@@ -297,8 +266,8 @@
         <div class="heatmap-dashboard">
             <div class="heatmap-header-bar">
                 <div class="heatmap-title-section">
-                    <h1 class="heatmap-main-title">Activity Analytics</h1>
-                    <p class="heatmap-subtitle">Job submission patterns and success metrics</p>
+                    <h1 class="heatmap-main-title">Activity</h1>
+                    <p class="heatmap-subtitle">When jobs start and how often they succeed</p>
                 </div>
                 <div class="heatmap-days-controls">
                     <span class="heatmap-days-label">Time Range</span>
@@ -394,8 +363,8 @@
         <div class="insights-dashboard">
             <div class="insights-header-bar">
                 <div class="insights-title-section">
-                    <h1 class="insights-main-title">Job Insights</h1>
-                    <p class="insights-subtitle">Resource usage analysis and recommendations</p>
+                    <h1 class="insights-main-title">Insights</h1>
+                    <p class="insights-subtitle">How well requests match what jobs actually use</p>
                 </div>
                 <div class="insights-controls">
                     <div class="insights-period-selector">
@@ -414,7 +383,7 @@
     <div class="modal-overlay" id="submit-modal" style="display: none;">
         <div class="modal submit-modal">
             <div class="modal-header">
-                <h2>Quick Submit</h2>
+                <h2>Submit a job</h2>
                 <button class="modal-close" onclick="closeSubmitModal()">&times;</button>
             </div>
             <div class="modal-body">
