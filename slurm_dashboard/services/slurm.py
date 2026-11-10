@@ -642,7 +642,7 @@ def parse_scontrol_output(output: str) -> dict:
 
 def get_submitted_script(job_id: str, user: str, max_lines: int = 200) -> dict:
     """Read Slurm's stored script, never the mutable submission source file."""
-    if not re.fullmatch(r"[0-9]+(?:_[0-9]+)?", job_id):
+    if not re.fullmatch(r"[0-9]+(?:_[0-9]+)?(?:\+[0-9]+)?", job_id):
         return {"error": "Invalid job ID", "status": "invalid"}
 
     attempts = []

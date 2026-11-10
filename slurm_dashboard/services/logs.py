@@ -117,7 +117,7 @@ def safe_log_path(
     if "::" not in log_key:
         return None
     name, job_id = log_key.split("::", 1)
-    if not job_id.isdigit():
+    if not re.fullmatch(r"[0-9]+(?:_[0-9]+)?(?:\+[0-9]+)?", job_id):
         return None
 
     stream = "out" if kind == "stdout" else "err"
@@ -136,7 +136,7 @@ def safe_log_path(
 
 
 def collect_recent_jobs(
-    log_root: Path, log_pattern: "LogPattern", limit: int = 200
+    log_root: Path, log_pattern: "LogPattern", limit: Optional[int] = 200
 ) -> list[dict]:
     """
     Collect recent jobs from log files using the configured pattern.
@@ -144,7 +144,7 @@ def collect_recent_jobs(
     Args:
         log_root: Base directory for logs
         log_pattern: Pattern configuration for log paths
-        limit: Maximum number of jobs to return
+        limit: Maximum number of jobs to return, or None for all discovered logs
 
     Returns:
         List of job dicts sorted by modification time (newest first)
