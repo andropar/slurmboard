@@ -37,6 +37,10 @@ pip install slurm-dashboard
   filters and sorts apply to the entire loaded scope, not just the current page
 - **Submitted scripts and logs** - Direct Script/Stdout/Stderr actions; live log
   following, explicit unavailable/error messages, and retry controls
+- **Full-space queue** - Jobs fill the available window. Opening a file shows
+  jobs on the left (60%) and the file on the right (40%); drag the divider or
+  focus it and use arrow keys to resize. Escape closes the file and restores
+  the full job list. The split is kept until reload; phones show files full-screen.
 - **Advanced tools** - The previous dashboard, including submission, cancellation,
   templates, batch operations, resource analysis, timeline and pipeline views,
   remains available at `/advanced`. Logs there open in a pop-up (close with the
