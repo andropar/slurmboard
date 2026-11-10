@@ -3,13 +3,15 @@
 <head>
     <meta charset="utf-8">
     <title>Slurm Dashboard</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ version }}">
 </head>
 <body>
     <div class="header-row">
         <div class="header-meta">
             <span class="last-updated-label">Updated</span>
             <span class="last-updated-value" id="last-updated">–</span>
+            <span class="scope-label" id="scope-label" title="Whose jobs are shown">{{ 'all users' if settings.all_users else settings.user }}</span>
         </div>
         <div class="header-controls">
             <button class="quick-submit-btn" onclick="openSubmitModal()" title="Submit new job (Ctrl+N)">+ Submit</button>
@@ -48,6 +50,7 @@
             </button>
         </div>
     </div>
+    <div class="status-banner" id="status-banner" role="status" style="display: none;"></div>
     <!-- Quick Filter Chips & Advanced Filters -->
     <div class="filter-bar" id="filter-bar">
         <div class="quick-filters">
@@ -124,9 +127,9 @@
             <div class="card widget running-wrapper" id="running-panel" data-widget="running">
                 <div class="widget-header table-header-row">
                     <div class="table-header-left">
-                        <h2 style="margin-bottom: 0;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10,8 16,12 10,16 10,8"/></svg>Running Jobs</h2>
+                        <h2 style="margin-bottom: 0;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10,8 16,12 10,16 10,8"/></svg>Active Jobs</h2>
                         <div class="stat-badge">
-                            <span>Running</span>
+                            <span>In queue</span>
                             <span class="stat-num" id="stat-running">0</span>
                         </div>
                     </div>
@@ -160,7 +163,8 @@
             <div class="card widget recent-wrapper" id="recent-panel" data-widget="recent">
                 <div class="widget-header recent-header">
                     <div class="recent-header-left">
-                        <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>Recent Jobs</h2>
+                        <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>Finished Jobs</h2>
+                        <span class="recent-window" id="recent-window">last {{ settings.history_days }} days</span>
                         <button class="compare-btn" id="compare-btn" onclick="startComparison()" style="display: none;">Compare</button>
                     </div>
                     <div class="recent-header-right">
@@ -553,6 +557,7 @@ echo 'Hello from Slurm!'"></textarea>
         </div>
     </div>
 
-    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+    <script>window.DASHBOARD_SETTINGS = {{ settings | tojson }};</script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v={{ version }}"></script>
 </body>
 </html>

@@ -5768,3 +5768,54 @@ tr.batch-selected:hover {
         border-radius: 0;
     }
 }
+
+/* ==========================================================================
+   0.2.0: status banner, owner tags, log messages
+   ========================================================================== */
+.status-banner {
+    margin: 0 0 12px;
+    border: 1px solid var(--status-timeout-text);
+    background: var(--status-timeout-bg);
+    color: var(--status-timeout-text);
+    border-radius: 8px;
+    font-size: 13px;
+}
+
+.status-banner-item {
+    padding: 8px 14px;
+}
+
+.status-banner-item + .status-banner-item {
+    border-top: 1px solid var(--status-timeout-text);
+}
+
+.scope-label,
+.recent-window,
+.insight-note {
+    font-size: 12px;
+    color: var(--text-faint);
+    font-weight: 400;
+    margin-left: 10px;
+}
+
+.user-tag {
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: var(--bg-tertiary);
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+#log-content .log-message {
+    padding: 16px;
+    color: var(--text-faint);
+    white-space: pre-wrap;
+    font-family: inherit;
+}
+
+.job-detail-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}

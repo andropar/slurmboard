@@ -11,6 +11,66 @@ const logSearchPrev = document.getElementById('log-search-prev');
 const logSearchNext = document.getElementById('log-search-next');
 const logSearchClose = document.getElementById('log-search-close');
 
+// --- Request plumbing ------------------------------------------------------
+// Writes carry a custom header: the server rejects cross-site requests, which
+// cannot set it. A 401 means the access cookie is missing or expired.
+const nativeFetch = window.fetch.bind(window);
+window.fetch = (input, init = {}) => {
+    const method = (init.method || 'GET').toUpperCase();
+    if (method !== 'GET') {
+        init = { ...init, headers: { ...(init.headers || {}), 'X-Slurm-Dashboard': '1' } };
+    }
+    return nativeFetch(input, init).then(res => {
+        if (res.status === 401) {
+            showBanner('auth', 'Not signed in. Reopen the URL (with token) that slurm-dashboard printed at startup.');
+        }
+        return res;
+    });
+};
+
+// Escape text for use in HTML content and quoted attributes.
+function escapeHtml(text) {
+    return String(text === null || text === undefined ? '' : text)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+const esc = escapeHtml;
+
+// A JS string literal that is safe inside an inline handler attribute.
+function jsArg(value) {
+    return esc(JSON.stringify(String(value === null || value === undefined ? '' : value)));
+}
+
+function fmtTime(value) {
+    if (!value || value === 'N/A') return 'N/A';
+    const date = new Date(value);
+    return isNaN(date) ? String(value) : date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+// Status banners (Slurm errors, lost connection), keyed so each can be cleared.
+const banners = {};
+function showBanner(key, message) {
+    if (banners[key] === message) return;
+    banners[key] = message;
+    renderBanners();
+}
+function clearBanner(key) {
+    if (!(key in banners)) return;
+    delete banners[key];
+    renderBanners();
+}
+function renderBanners() {
+    const el = document.getElementById('status-banner');
+    if (!el) return;
+    const messages = Object.values(banners);
+    el.style.display = messages.length ? 'block' : 'none';
+    el.innerHTML = messages.map(m => `<div class="status-banner-item">${esc(m)}</div>`).join('');
+}
+
+let dashboardMeta = window.DASHBOARD_SETTINGS || {};
+let lastJobsPayload = '';
+const MAX_LOG_CHARS = 400000;
+
 // Theme handling
 function getPreferredTheme() {
     const stored = localStorage.getItem('theme');
@@ -50,7 +110,6 @@ let expandedJobs = new Set();
 let jobDetails = {};
 let resourceHistory = {}; // Store resource samples over time for charts
 let jobSubmitInfo = {}; // Cache for job submission info
-let queueInfo = {}; // Cache for queue position and wait estimates
 let insightsData = null; // Cache for job insights
 let insightsCollapsed = localStorage.getItem('insightsCollapsed') === 'true';
 
@@ -274,7 +333,7 @@ async function toggleWatchJob(jobId, jobName) {
     });
 }
 
-function checkJobStateChanges(currentJobs) {
+function checkJobStateChanges(currentJobs, finishedJobs = []) {
     const currentById = {};
     for (const job of currentJobs) {
         currentById[job.id] = job;
@@ -289,7 +348,9 @@ function checkJobStateChanges(currentJobs) {
         if (prevState && prevState.state && !currentJob) {
             const wasRunning = prevState.state.toLowerCase().includes('running');
             if (wasRunning) {
-                sendJobNotification(jobId, prevState.name, 'completed', prevState.runtime);
+                const finished = finishedJobs.find(j => j.id === jobId);
+                const finalState = finished && finished.state ? finished.state.toLowerCase() : 'finished';
+                sendJobNotification(jobId, prevState.name, finalState, (finished && finished.elapsed) || prevState.runtime);
                 watchedJobs.delete(jobId);
                 saveWatchedJobs();
             }
@@ -316,8 +377,8 @@ function checkJobStateChanges(currentJobs) {
 function sendJobNotification(jobId, jobName, state, runtime) {
     if (Notification.permission !== 'granted') return;
 
-    const isFailure = state.includes('failed') || state.includes('cancelled') || state.includes('timeout');
-    const title = isFailure ? `Job Failed: ${jobName}` : `Job Completed: ${jobName}`;
+    const isFailure = ['failed', 'cancelled', 'timeout', 'out_of_memory', 'node_fail'].some(s => state.includes(s));
+    const title = isFailure ? `Job ${state.replace(/_/g, ' ')}: ${jobName}` : `Job finished: ${jobName}`;
     const icon = isFailure ? '❌' : '✅';
 
     const notification = new Notification(title, {
@@ -405,7 +466,7 @@ function exitCompareMode() {
     selectedForCompare.clear();
 
     // Restore normal view
-    document.getElementById('log-wrapper').style.display = 'flex';
+    logPanel.parentElement.style.display = '';
     const compareView = document.getElementById('compare-view');
     if (compareView) compareView.remove();
 
@@ -416,7 +477,7 @@ function exitCompareMode() {
 
 function renderCompareView() {
     // Hide normal log panel
-    document.getElementById('log-wrapper').style.display = 'none';
+    logPanel.parentElement.style.display = 'none';
 
     // Create comparison view
     let compareView = document.getElementById('compare-view');
@@ -446,7 +507,7 @@ function renderCompareView() {
             ${comparePanes.map((pane, idx) => `
                 <div class="compare-pane card" data-pane-idx="${idx}">
                     <div class="compare-pane-header">
-                        <span class="compare-pane-title">${pane.logKey}</span>
+                        <span class="compare-pane-title">${esc(jobLabel(pane.logKey))}</span>
                         <div class="compare-pane-controls">
                             <button class="${pane.kind === 'stdout' ? 'active' : ''}" onclick="switchCompareKind(${idx}, 'stdout')">stdout</button>
                             <button class="${pane.kind === 'stderr' ? 'active' : ''}" onclick="switchCompareKind(${idx}, 'stderr')">stderr</button>
@@ -480,9 +541,16 @@ function startCompareStream(idx) {
                 pane.content = payload.snapshot;
                 if (panel) panel.textContent = pane.content;
             }
+            if (payload.reset) {
+                pane.content = '';
+                if (panel) panel.textContent = '';
+            }
             if (payload.append) {
-                pane.content += payload.append;
+                pane.content = (pane.content + payload.append).slice(-MAX_LOG_CHARS);
                 if (panel) panel.textContent = pane.content;
+            }
+            if (payload.error && panel) {
+                panel.textContent = payload.error;
             }
         } catch (e) {
             console.error(e);
@@ -612,8 +680,27 @@ function deleteAnnotation(lineNumber) {
     renderLogWithAnnotations();
 }
 
+// Appends arrive in bursts; render at most once per frame.
+let logRenderQueued = false;
+function scheduleLogRender() {
+    if (logRenderQueued) return;
+    logRenderQueued = true;
+    requestAnimationFrame(() => {
+        logRenderQueued = false;
+        const stick = autoScroll && isNearBottom();
+        renderLogWithAnnotations();
+        if (stick) logPanel.scrollTop = logPanel.scrollHeight;
+    });
+}
+
 function renderLogWithAnnotations() {
     if (!originalLogContent) return;
+
+    // Keep search highlights while new output streams in.
+    if (logSearchInput.value.trim() && logSearchResults.length > 0) {
+        highlightMatches(logSearchInput.value);
+        return;
+    }
 
     const currentAnnotations = getAnnotationsForCurrentLog();
     const lines = originalLogContent.split('\n');
@@ -658,10 +745,10 @@ function renderLogWithAnnotations() {
         html += `<div class="${classes.join(' ')}" data-line="${lineNum}" id="log-line-${lineNum}">`;
         html += `<span class="line-number" onclick="handleLineClick(${lineNum})">${lineNum}</span>`;
         if (hasAnnotation) {
-            html += `<span class="annotation-marker" title="${hasAnnotation.text.replace(/"/g, '&quot;')}" onclick="showAnnotationMenu(${lineNum}, event)">●</span>`;
+            html += `<span class="annotation-marker" title="${esc(hasAnnotation.text)}" onclick="showAnnotationMenu(${lineNum}, event)">●</span>`;
         }
         if (isErrorLine) {
-            html += `<span class="error-indicator" title="${lineError.label}">!</span>`;
+            html += `<span class="error-indicator" title="${esc(lineError.label)}">!</span>`;
         }
         html += `<span class="line-content">${escapedLine}</span>`;
         html += '</div>';
@@ -808,8 +895,7 @@ function renderErrorSummary() {
     summary.innerHTML = html;
 
     // Insert before log panel
-    const logWrapper = document.getElementById('log-wrapper');
-    logWrapper.insertBefore(summary, logPanel);
+    logPanel.parentElement.insertBefore(summary, logPanel);
 }
 
 function jumpToLogLine(lineNum) {
@@ -859,7 +945,7 @@ function showAnnotationMenu(lineNumber, event) {
     const menu = document.createElement('div');
     menu.className = 'annotation-menu';
     menu.innerHTML = `
-        <div class="annotation-menu-text">${annotation.text}</div>
+        <div class="annotation-menu-text">${esc(annotation.text)}</div>
         <div class="annotation-menu-actions">
             <button onclick="editAnnotation(${lineNumber})">Edit</button>
             <button onclick="deleteAnnotation(${lineNumber})">Delete</button>
@@ -978,14 +1064,9 @@ async function searchLogContent(query) {
 
 function highlightMatches(query) {
     if (!query.trim()) {
-        logPanel.textContent = originalLogContent;
+        renderLogWithAnnotations();
         return;
     }
-
-    // Escape HTML but preserve the text
-    const escapeHtml = (text) => {
-        return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    };
 
     // Create regex for highlighting
     let regex;
@@ -996,9 +1077,19 @@ function highlightMatches(query) {
         regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
     }
 
-    const content = originalLogContent;
-    const highlighted = escapeHtml(content).replace(regex, '<mark>$1</mark>');
-    logPanel.innerHTML = highlighted;
+    // Highlight on the raw text, then escape each piece (escaping first would
+    // let the pattern match inside entities such as &amp;).
+    const text = originalLogContent;
+    let html = '';
+    let last = 0;
+    let match;
+    regex.lastIndex = 0;
+    while ((match = regex.exec(text)) !== null) {
+        if (match[0] === '') { regex.lastIndex++; continue; }
+        html += esc(text.slice(last, match.index)) + `<mark>${esc(match[0])}</mark>`;
+        last = match.index + match[0].length;
+    }
+    logPanel.innerHTML = html + esc(text.slice(last));
 
     // Mark the current match
     updateCurrentMatchHighlight();
@@ -1046,7 +1137,7 @@ function clearLogSearch() {
     logSearchResults = [];
     logSearchCurrentIndex = -1;
     if (originalLogContent) {
-        logPanel.textContent = originalLogContent;
+        renderLogWithAnnotations();
     }
     updateSearchButtons();
 }
@@ -1072,55 +1163,64 @@ function handleLogSearchInput(e) {
 }
 
 async function fetchJobs() {
+    let data;
     try {
         const res = await fetch('/api/jobs');
-        if (!res.ok) return;
-        const data = await res.json();
-        allRunningJobs = data.running;
-        allRecentJobs = data.recent;
-
-        // Check for state changes in watched jobs
-        checkJobStateChanges(data.running);
-
-        document.getElementById('stat-running').textContent = data.running.length;
-        const lastUpdatedEl = document.getElementById('last-updated');
-        if (lastUpdatedEl) {
-            const now = new Date();
-            lastUpdatedEl.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        if (!res.ok) {
+            if (res.status !== 401) showBanner('server', `Dashboard server error (HTTP ${res.status}).`);
+            return;
         }
-
-        renderRunning(filterJobs(allRunningJobs));
-        renderRecent(filterJobs(allRecentJobs));
-
-        // Load queue info if there are pending jobs
-        const hasPending = allRunningJobs.some(j => j.state && j.state.toLowerCase().includes('pending'));
-        if (hasPending) {
-            loadQueueInfo();
-        }
+        data = await res.json();
     } catch (err) {
-        console.error(err);
+        showBanner('server', 'Cannot reach the dashboard server. Is slurm-dashboard (or your SSH tunnel) still running?');
+        return;
     }
+    clearBanner('server');
+    clearBanner('auth');
+
+    const errors = data.errors || [];
+    if (errors.length) {
+        showBanner('slurm', `Slurm problem: ${errors.join('; ')}. Showing the last data that loaded.`);
+    } else {
+        clearBanner('slurm');
+    }
+
+    const lastUpdatedEl = document.getElementById('last-updated');
+    if (lastUpdatedEl) {
+        lastUpdatedEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    // Skip the DOM work when nothing changed since the last poll.
+    const payload = JSON.stringify([data.running, data.recent, data.meta]);
+    if (payload === lastJobsPayload) return;
+    lastJobsPayload = payload;
+
+    dashboardMeta = data.meta || dashboardMeta;
+    allRunningJobs = data.running;
+    allRecentJobs = data.recent;
+
+    checkJobStateChanges(data.running, data.recent);
+
+    document.getElementById('stat-running').textContent = data.running.length;
+    const scopeEl = document.getElementById('scope-label');
+    if (scopeEl) {
+        scopeEl.textContent = dashboardMeta.all_users ? 'all users' : (dashboardMeta.user || '');
+    }
+    const recentLabel = document.getElementById('recent-window');
+    if (recentLabel) recentLabel.textContent = `last ${dashboardMeta.history_days} days`;
+
+    renderRunning(filterJobs(allRunningJobs));
+    renderRecent(filterJobs(allRecentJobs));
 }
 
-async function loadQueueInfo() {
-    try {
-        const res = await fetch('/api/queue_info');
-        if (!res.ok) return;
-        const data = await res.json();
+// "name · id" for a job ID, falling back to the bare ID.
+function jobLabel(jobId) {
+    const job = allRunningJobs.find(j => j.id === jobId) || allRecentJobs.find(j => j.id === jobId);
+    return job && job.name ? `${job.name} · ${jobId}` : String(jobId);
+}
 
-        // Store queue info by job ID
-        queueInfo = {};
-        if (data.pending_jobs) {
-            for (const job of data.pending_jobs) {
-                queueInfo[job.job_id] = job;
-            }
-        }
-
-        // Re-render running jobs to show queue info
-        renderRunning(filterJobs(allRunningJobs));
-    } catch (err) {
-        console.error('Queue info fetch error:', err);
-    }
+function userTag(job) {
+    return dashboardMeta.all_users && job.user ? `<span class="user-tag" title="Owner">${esc(job.user)}</span>` : '';
 }
 
 async function toggleJobDetails(jobId) {
@@ -1137,7 +1237,7 @@ async function toggleJobDetails(jobId) {
 
         if (!jobDetails[jobId]) {
             try {
-                const res = await fetch(`/api/job_details/${jobId}`);
+                const res = await fetch(`/api/job_details/${encodeURIComponent(jobId)}`);
                 if (res.ok) {
                     jobDetails[jobId] = await res.json();
                 }
@@ -1174,58 +1274,42 @@ function renderDetailsRow(job, colspan) {
     const details = jobDetails[job.id];
     if (!details) return '';
 
-    const isRunning = job.state && job.state.toLowerCase().includes('running');
+    const isRunning = job.state_category === 'running';
     const submitInfo = jobSubmitInfo[job.id];
+    const effBar = value => value && value !== 'N/A' ? `
+        <div class="efficiency-bar">
+            <div class="efficiency-fill ${getEfficiencyClass(value)}" style="width: ${esc(value)}"></div>
+        </div>` : '';
+    const item = (label, value) => `
+        <div class="detail-item">
+            <div class="detail-label">${label}</div>
+            <div class="detail-value">${esc(value || 'N/A')}</div>
+        </div>`;
 
     return `
-        <tr class="details-row" id="details-${job.id}">
+        <tr class="details-row" id="details-${esc(job.id)}">
             <td colspan="${colspan}">
                 <div class="details-content">
-                    <div class="detail-item">
-                        <div class="detail-label">Exit Code</div>
-                        <div class="detail-value">${details.exit_code || 'N/A'}</div>
-                    </div>
+                    ${item('Partition', job.partition)}
+                    ${item('Resources', [job.cpus ? `${job.cpus} CPU` : '', job.gres, details.req_mem].filter(Boolean).join(' · '))}
+                    ${item('Submitted', fmtTime(job.submit))}
+                    ${isRunning ? item('Node', job.nodelist) : item('Waiting for', job.reason)}
+                    ${job.expected_start ? item('Planned start', fmtTime(job.expected_start)) : ''}
+                    ${job.dependency ? item('Depends on', job.dependency) : ''}
+                    ${isRunning ? `
                     <div class="detail-item">
                         <div class="detail-label">CPU Efficiency</div>
-                        <div class="detail-value">${details.cpu_eff || 'N/A'}</div>
-                        ${details.cpu_eff && details.cpu_eff !== 'N/A' ? `
-                            <div class="efficiency-bar">
-                                <div class="efficiency-fill ${getEfficiencyClass(details.cpu_eff)}" style="width: ${details.cpu_eff}"></div>
-                            </div>
-                        ` : ''}
+                        <div class="detail-value">${esc(details.cpu_eff || 'N/A')}</div>
+                        ${effBar(details.cpu_eff)}
                     </div>
-                    <div class="detail-item">
-                        <div class="detail-label">Memory Efficiency</div>
-                        <div class="detail-value">${details.mem_eff || 'N/A'}</div>
-                        ${details.mem_eff && details.mem_eff !== 'N/A' ? `
-                            <div class="efficiency-bar">
-                                <div class="efficiency-fill ${getEfficiencyClass(details.mem_eff)}" style="width: ${details.mem_eff}"></div>
-                            </div>
-                        ` : ''}
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">State</div>
-                        <div class="detail-value">${details.state || 'N/A'}</div>
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">End Time</div>
-                        <div class="detail-value">${details.end_time || 'N/A'}</div>
-                    </div>
-                    ${details.service_units !== null && details.service_units !== undefined ? `
-                    <div class="detail-item cost-detail">
-                        <div class="detail-label">Cost (SUs)</div>
-                        <div class="detail-value cost-value">${formatSUs(details.service_units)}</div>
-                    </div>
-                    ` : ''}
-                    ${isRunning ? `
-                    <div class="detail-item resource-chart-item" id="resource-chart-${job.id}">
+                    <div class="detail-item resource-chart-item" id="resource-chart-${esc(job.id)}">
                         <div class="detail-label">Live Resources</div>
                         <div class="resource-loading">Loading...</div>
                     </div>
                     ` : ''}
-                    <div class="detail-item resubmit-section" id="resubmit-section-${job.id}">
+                    <div class="detail-item resubmit-section" id="resubmit-section-${esc(job.id)}">
                         ${submitInfo ? renderResubmitSection(job.id, submitInfo) : `
-                            <div class="detail-label">Resubmit</div>
+                            <div class="detail-label">Submission</div>
                             <div class="resubmit-loading">Loading submission info...</div>
                         `}
                     </div>
@@ -1238,32 +1322,30 @@ function renderDetailsRow(job, colspan) {
 function renderResubmitSection(jobId, info) {
     if (info.error) {
         return `
-            <div class="detail-label">Resubmit</div>
-            <div class="resubmit-unavailable">${info.error}</div>
+            <div class="detail-label">Submission</div>
+            <div class="resubmit-unavailable">${esc(info.error)}</div>
         `;
     }
+    const field = (label, value) => value ? `<div class="resubmit-field"><span class="resubmit-label">${label}:</span> <span class="resubmit-value">${esc(value)}</span></div>` : '';
 
     return `
-        <div class="detail-label">Resubmit Job</div>
+        <div class="detail-label">Submission</div>
         <div class="resubmit-info">
-            ${info.work_dir ? `<div class="resubmit-field"><span class="resubmit-label">Work Dir:</span> <span class="resubmit-value">${info.work_dir}</span></div>` : ''}
-            ${info.script_path ? `<div class="resubmit-field"><span class="resubmit-label">Script:</span> <span class="resubmit-value">${info.script_path}</span></div>` : ''}
-            ${info.partition ? `<div class="resubmit-field"><span class="resubmit-label">Partition:</span> <span class="resubmit-value">${info.partition}</span></div>` : ''}
-            ${info.timelimit ? `<div class="resubmit-field"><span class="resubmit-label">Time Limit:</span> <span class="resubmit-value">${info.timelimit}</span></div>` : ''}
-            ${info.req_mem ? `<div class="resubmit-field"><span class="resubmit-label">Memory:</span> <span class="resubmit-value">${info.req_mem}</span></div>` : ''}
+            ${field('Work Dir', info.work_dir)}
+            ${field('Script', info.script_path)}
+            ${field('Time Limit', info.timelimit)}
+            ${field('Memory', info.req_mem)}
         </div>
         <div class="resubmit-actions">
-            ${info.script_path ? `
-                <button class="resubmit-btn" onclick="viewScript('${info.script_path.replace(/'/g, "\\'")}')">View Script</button>
-                <button class="resubmit-btn primary" onclick="showResubmitDialog('${jobId}')">Resubmit</button>
-            ` : `<span class="resubmit-unavailable">Script path not available</span>`}
+            <button class="resubmit-btn" onclick="viewScript(${jsArg(jobId)})">View Script</button>
+            ${info.owned ? `<button class="resubmit-btn primary" onclick="showResubmitDialog(${jsArg(jobId)})">Resubmit</button>` : ''}
         </div>
     `;
 }
 
 async function loadSubmitInfo(jobId) {
     try {
-        const res = await fetch(`/api/job_submit_info/${jobId}`);
+        const res = await fetch(`/api/job_submit_info/${encodeURIComponent(jobId)}`);
         const data = await res.json();
         jobSubmitInfo[jobId] = data;
 
@@ -1276,25 +1358,25 @@ async function loadSubmitInfo(jobId) {
     }
 }
 
-async function viewScript(scriptPath) {
+async function viewScript(jobId) {
     try {
-        const res = await fetch(`/api/script_content?path=${encodeURIComponent(scriptPath)}`);
+        const res = await fetch(`/api/job_script/${encodeURIComponent(jobId)}`);
         const data = await res.json();
 
         if (data.error) {
             alert('Could not load script: ' + data.error);
             return;
         }
-
-        // Create a modal to display the script
-        showScriptModal(scriptPath, data.content, data.truncated);
+        const note = data.source === 'slurm'
+            ? 'Copy kept by Slurm at submission time'
+            : `Current file on disk (${data.path}); it may have changed since submission`;
+        showScriptModal(`Script of ${jobLabel(jobId)}`, data.content, note);
     } catch (err) {
         alert('Error loading script');
     }
 }
 
-function showScriptModal(path, content, truncated) {
-    // Remove existing modal
+function showScriptModal(title, content, note) {
     const existing = document.getElementById('script-modal');
     if (existing) existing.remove();
 
@@ -1304,17 +1386,15 @@ function showScriptModal(path, content, truncated) {
     modal.innerHTML = `
         <div class="modal-content">
             <div class="modal-header">
-                <h3>Script: ${path.split('/').pop()}</h3>
+                <h3>${esc(title)}</h3>
                 <button class="modal-close" onclick="closeScriptModal()">&times;</button>
             </div>
-            <pre class="script-content">${escapeHtml(content)}</pre>
-            ${truncated ? '<div class="script-truncated">Script truncated (max 200 lines)</div>' : ''}
+            <pre class="script-content">${esc(content)}</pre>
+            ${note ? `<div class="script-truncated">${esc(note)}</div>` : ''}
         </div>
     `;
 
     document.body.appendChild(modal);
-
-    // Close on click outside
     modal.addEventListener('click', (e) => {
         if (e.target === modal) closeScriptModal();
     });
@@ -1325,14 +1405,27 @@ function closeScriptModal() {
     if (modal) modal.remove();
 }
 
-function escapeHtml(text) {
-    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+async function ensureSubmitInfo(jobId) {
+    if (!jobSubmitInfo[jobId]) {
+        const res = await fetch(`/api/job_submit_info/${encodeURIComponent(jobId)}`);
+        jobSubmitInfo[jobId] = await res.json();
+    }
+    return jobSubmitInfo[jobId];
+}
+
+async function openResubmit(jobId) {
+    try {
+        await ensureSubmitInfo(jobId);
+        showResubmitDialog(jobId);
+    } catch (err) {
+        alert('Could not load submission info');
+    }
 }
 
 function showResubmitDialog(jobId) {
     const info = jobSubmitInfo[jobId];
-    if (!info || info.error || !info.script_path) {
-        alert('Cannot resubmit: script path not available');
+    if (!info || info.error) {
+        alert('Cannot resubmit: ' + ((info && info.error) || 'submission info not available'));
         return;
     }
 
@@ -1352,30 +1445,30 @@ function showResubmitDialog(jobId) {
             <div class="resubmit-form">
                 <div class="form-group">
                     <label>Script</label>
-                    <input type="text" id="resubmit-script" value="${info.script_path}" readonly>
+                    <input type="text" id="resubmit-script" data-job-id="${esc(jobId)}" value="${esc(info.script_path || 'Copy kept by Slurm (original file not found)')}" readonly>
                 </div>
                 <div class="form-group">
                     <label>Working Directory</label>
-                    <input type="text" id="resubmit-workdir" value="${info.work_dir || ''}" placeholder="Original directory">
+                    <input type="text" id="resubmit-workdir" value="${esc(info.work_dir || '')}" placeholder="Original directory">
                 </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label>Partition</label>
-                        <input type="text" id="resubmit-partition" value="${info.partition || ''}" placeholder="Default">
+                        <input type="text" id="resubmit-partition" value="" placeholder="${esc(info.partition || 'As in script')}">
                     </div>
                     <div class="form-group">
                         <label>Time Limit</label>
-                        <input type="text" id="resubmit-time" value="${info.timelimit || ''}" placeholder="e.g., 1:00:00">
+                        <input type="text" id="resubmit-time" value="" placeholder="${esc(info.timelimit || 'As in script')}">
                     </div>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label>Memory</label>
-                        <input type="text" id="resubmit-memory" value="${info.req_mem || ''}" placeholder="e.g., 4G">
+                        <input type="text" id="resubmit-memory" value="" placeholder="${esc(info.req_mem || 'As in script')}">
                     </div>
                     <div class="form-group">
                         <label>CPUs</label>
-                        <input type="number" id="resubmit-cpus" value="${info.req_cpus || ''}" placeholder="Default">
+                        <input type="number" id="resubmit-cpus" value="" placeholder="${esc(info.req_cpus || 'As in script')}">
                     </div>
                 </div>
             </div>
@@ -1396,7 +1489,7 @@ function closeResubmitDialog() {
 }
 
 async function submitResubmit() {
-    const scriptPath = document.getElementById('resubmit-script').value;
+    const jobId = document.getElementById('resubmit-script').dataset.jobId;
     const workDir = document.getElementById('resubmit-workdir').value;
     const partition = document.getElementById('resubmit-partition').value;
     const timeLimit = document.getElementById('resubmit-time').value;
@@ -1412,7 +1505,7 @@ async function submitResubmit() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                script_path: scriptPath,
+                job_id: jobId,
                 work_dir: workDir || null,
                 partition: partition || null,
                 time_limit: timeLimit || null,
@@ -1427,7 +1520,7 @@ async function submitResubmit() {
             statusEl.textContent = 'Error: ' + data.error;
             statusEl.className = 'resubmit-status error';
         } else {
-            statusEl.innerHTML = `<strong>Success!</strong> New job ID: <span class="metric">${data.job_id}</span>`;
+            statusEl.innerHTML = `<strong>Success!</strong> New job ID: <span class="metric">${esc(data.job_id)}</span>`;
             statusEl.className = 'resubmit-status success';
 
             // Refresh job list after short delay
@@ -1444,7 +1537,7 @@ async function submitResubmit() {
 
 async function loadResourceData(jobId) {
     try {
-        const res = await fetch(`/api/job_resources/${jobId}`);
+        const res = await fetch(`/api/job_resources/${encodeURIComponent(jobId)}`);
         if (!res.ok) return;
         const data = await res.json();
 
@@ -1453,7 +1546,7 @@ async function loadResourceData(jobId) {
             if (container) {
                 container.innerHTML = `
                     <div class="detail-label">Live Resources</div>
-                    <div class="resource-unavailable">${data.error}</div>
+                    <div class="resource-unavailable">${esc(data.error)}</div>
                 `;
             }
             return;
@@ -1500,16 +1593,16 @@ function renderResourceChart(jobId, data) {
         <div class="resource-metrics">
             <div class="resource-metric">
                 <span class="resource-label">Max Memory:</span>
-                <span class="resource-value">${maxRss}</span>
+                <span class="resource-value">${esc(maxRss)}</span>
             </div>
             <div class="resource-metric">
                 <span class="resource-label">Avg Memory:</span>
-                <span class="resource-value">${aveRss}</span>
+                <span class="resource-value">${esc(aveRss)}</span>
             </div>
             ${data.ntasks ? `
             <div class="resource-metric">
                 <span class="resource-label">Tasks:</span>
-                <span class="resource-value">${data.ntasks}</span>
+                <span class="resource-value">${esc(data.ntasks)}</span>
             </div>
             ` : ''}
         </div>
@@ -1602,8 +1695,7 @@ function matchesQuickFilter(job, filter) {
     switch (filter) {
         case 'failed':
             // If job has no state (log-only), don't filter it out
-            if (!job.state) return false;
-            return state.includes('failed') || state.includes('cancelled') || state.includes('timeout');
+            return ['failed', 'cancelled', 'timeout'].includes(job.state_category);
         case 'today':
             const updated = job.updated || job.start_time;
             if (!updated) return true; // Include jobs without date info
@@ -1771,7 +1863,7 @@ function getStatusClass(state) {
     if (s.includes('running')) return 'status-running';
     if (s.includes('pending') || s.includes('configuring')) return 'status-pending';
     if (s.includes('completed')) return 'status-completed';
-    if (s.includes('failed') || s.includes('cancelled') || s.includes('error')) return 'status-failed';
+    if (s.includes('failed') || s.includes('cancelled') || s.includes('error') || s.includes('out_of_memory') || s.includes('node_fail')) return 'status-failed';
     if (s.includes('timeout')) return 'status-timeout';
     return 'status-pending';
 }
@@ -1784,6 +1876,11 @@ function formatStateShort(state) {
     if (s.startsWith('CANCEL')) return 'CA';
     if (s.includes('TIMEOUT')) return 'TO';
     if (s.includes('CONFIG')) return 'CF';
+    if (s === 'FAILED') return 'F';
+    if (s === 'OUT_OF_MEMORY') return 'OOM';
+    if (s === 'NODE_FAIL') return 'NF';
+    if (s === 'PREEMPTED') return 'PR';
+    if (s === 'UNKNOWN') return '?';
     return s.split('+')[0].slice(0, 4);
 }
 
@@ -1796,58 +1893,53 @@ function formatHours(hours) {
 
 function renderRunning(rows) {
     if (!rows.length) {
-        runningBody.innerHTML = '<tr><td colspan="5"><div class="empty-state">No running jobs.</div></td></tr>';
+        const why = allRunningJobs.length ? 'No active jobs match the filters.' : 'No running or pending jobs.';
+        runningBody.innerHTML = `<tr><td colspan="5"><div class="empty-state">${why}</div></td></tr>`;
         updateBatchActionsVisibility('running');
         return;
     }
     runningBody.innerHTML = rows.map(job => {
         const watched = isJobWatched(job.id);
-        const isPending = job.state && job.state.toLowerCase().includes('pending');
-        const jobQueueInfo = queueInfo[job.id];
+        const isPending = job.state_category === 'pending';
         const isSelected = selectedRunningJobs.has(job.id);
+        const id = esc(job.id);
+        const idArg = jsArg(job.id);
 
-        // Build queue info display for pending jobs
+        // What Slurm itself reports about a waiting job: reason and planned start.
         let queueDisplay = '';
-        if (isPending && jobQueueInfo) {
-            const conf = jobQueueInfo.confidence || 'low';
-            const confClass = conf === 'high' ? 'confidence-high' : conf === 'medium' ? 'confidence-medium' : 'confidence-low';
+        if (isPending && (job.reason || job.expected_start)) {
             queueDisplay = `
                 <div class="queue-info">
-                    <span class="queue-position" title="Position in partition queue">
-                        #${jobQueueInfo.position || '?'}/${jobQueueInfo.total_in_partition || '?'}
-                    </span>
-                    ${jobQueueInfo.estimated_wait ? `
-                        <span class="queue-wait ${confClass}" title="Estimated wait time (${conf} confidence)">
-                            ~${jobQueueInfo.estimated_wait}
-                        </span>
-                    ` : ''}
+                    ${job.reason ? `<span class="queue-position" title="Why Slurm has not started this job">${esc(job.reason)}</span>` : ''}
+                    ${job.expected_start ? `<span class="queue-wait confidence-high" title="Start time planned by the scheduler">starts ${esc(fmtTime(job.expected_start))}</span>` : ''}
                 </div>
             `;
         }
 
         return `
-        <tr class="${currentLogKey === job.log_key ? 'active-log' : ''} ${watched ? 'watched-job' : ''} ${isSelected ? 'batch-selected' : ''}" data-log-key="${job.log_key}" data-job-id="${job.id}">
+        <tr class="${currentLogKey === job.log_key ? 'active-log' : ''} ${watched ? 'watched-job' : ''} ${isSelected ? 'batch-selected' : ''}" data-log-key="${id}" data-job-id="${id}">
             <td class="select-col">
-                <input type="checkbox" class="batch-select" ${isSelected ? 'checked' : ''} onchange="toggleJobSelection('running', '${job.id}', this.checked)">
+                <input type="checkbox" class="batch-select" ${isSelected ? 'checked' : ''} ${job.owned ? '' : 'disabled'} onchange="toggleJobSelection('running', ${idArg}, this.checked)">
             </td>
             <td class="job-cell col-main">
                 <div class="job-main-top">
-                    <span class="expand-btn" data-job-id="${job.id}" onclick="toggleJobDetails('${job.id}')">${expandedJobs.has(job.id) ? '▾' : '▸'}</span>
-                    <span class="metric">${job.id}</span>
-                    <button class="copy-btn" onclick="copyToClipboard('${job.id}', this)">⎘</button>
-                    <button class="watch-btn ${watched ? 'watching' : ''}" onclick="toggleWatchJob('${job.id}', '${job.name.replace(/'/g, "\\'")}')" title="${watched ? 'Stop watching' : 'Watch for completion'}">
+                    <span class="expand-btn" data-job-id="${id}" onclick="toggleJobDetails(${idArg})">${expandedJobs.has(job.id) ? '▾' : '▸'}</span>
+                    <span class="metric">${id}</span>
+                    <button class="copy-btn" onclick="copyToClipboard(${idArg}, this)">⎘</button>
+                    <button class="watch-btn ${watched ? 'watching' : ''}" onclick="toggleWatchJob(${idArg}, ${jsArg(job.name)})" title="${watched ? 'Stop watching' : 'Notify me when this job ends'}">
                         ${watched ? '★' : '☆'}
                     </button>
+                    ${userTag(job)}
                 </div>
-                <div class="job-main-name" title="${job.name}">${job.name}</div>
+                <div class="job-main-name" title="${esc(job.name)}">${esc(job.name)}</div>
                 ${queueDisplay}
             </td>
-            <td class="col-state"><span class="status-badge ${getStatusClass(job.state)}">${formatStateShort(job.state)}</span></td>
-            <td class="col-runtime"><span class="metric">${job.runtime}</span></td>
+            <td class="col-state"><span class="status-badge ${getStatusClass(job.state)}" title="${esc(job.state)}">${esc(formatStateShort(job.state))}</span></td>
+            <td class="col-runtime"><span class="metric" title="Limit ${esc(job.limit)}">${esc(job.runtime)}</span></td>
             <td class="col-actions">
-                <button onclick="openLog('${job.log_key}','stdout')">stdout</button>
-                <button onclick="openLog('${job.log_key}','stderr')">stderr</button>
-                <button onclick="cancelJob('${job.id}')" style="background: var(--status-failed-bg); color: var(--status-failed-text);">cancel</button>
+                <button onclick="openLog(${idArg},'stdout')">stdout</button>
+                <button onclick="openLog(${idArg},'stderr')">stderr</button>
+                ${job.owned ? `<button onclick="cancelJob(${idArg})" style="background: var(--status-failed-bg); color: var(--status-failed-text);">cancel</button>` : ''}
             </td>
         </tr>
         ${expandedJobs.has(job.id) ? renderDetailsRow(job, 5) : ''}`;
@@ -1857,170 +1949,192 @@ function renderRunning(rows) {
 
 function renderRecent(rows) {
     if (!rows.length) {
-        recentBody.innerHTML = '<div class="empty-state">No recent jobs found.</div>';
+        const why = allRecentJobs.length
+            ? 'No finished jobs match the filters.'
+            : `No finished jobs in the last ${dashboardMeta.history_days || 7} days.`;
+        recentBody.innerHTML = `<div class="empty-state">${why}</div>`;
         updateBatchActionsVisibility('recent');
         return;
     }
     recentBody.innerHTML = rows.map(job => {
         const isSelected = selectedRecentJobs.has(job.id);
-        const stateClass = job.state ? `state-${job.state.toLowerCase().split(' ')[0]}` : '';
+        const stateClass = `state-${esc((job.state_category === 'failed' ? 'failed' : job.state || 'unknown').toLowerCase())}`;
         const isActive = currentLogKey === job.log_key;
+        const isExpanded = expandedJobs.has(job.id);
+        const id = esc(job.id);
+        const idArg = jsArg(job.id);
         return `
-        <div class="job-row ${isActive ? 'active-log' : ''} ${isSelected ? 'batch-selected' : ''}" data-log-key="${job.log_key}" data-job-id="${job.id}">
+        <div class="job-row ${isActive ? 'active-log' : ''} ${isSelected ? 'batch-selected' : ''} ${isExpanded ? 'expanded' : ''}" data-log-key="${id}" data-job-id="${id}">
             <div class="job-row-main">
-                <input type="checkbox" class="job-checkbox" ${isSelected ? 'checked' : ''} onchange="toggleJobSelection('recent', '${job.id}', this.checked)">
-                <div class="job-info" onclick="toggleJobExpand('${job.id}')">
-                    <span class="job-name">${job.name}</span>
-                    <span class="job-state-badge ${stateClass}">${formatStateShort(job.state || 'UNKNOWN')}</span>
-                    <span class="job-id" onclick="event.stopPropagation(); copyToClipboard('${job.id}', this)" title="Click to copy">${job.id}</span>
-                    <span class="job-time">${relativeTime(job.updated)}</span>
+                <input type="checkbox" class="job-checkbox" ${isSelected ? 'checked' : ''} onchange="toggleJobSelection('recent', ${idArg}, this.checked)">
+                <div class="job-info" onclick="toggleJobExpand(${idArg})">
+                    <span class="job-name" title="${esc(job.name)}">${esc(job.name)}</span>
+                    <span class="job-state-badge ${stateClass}" title="${esc(job.state || 'Unknown: only log files were found')}">${esc(formatStateShort(job.state || 'UNKNOWN'))}</span>
+                    <span class="job-id" onclick="event.stopPropagation(); copyToClipboard(${idArg}, this)" title="Click to copy">${id}</span>
+                    ${userTag(job)}
+                    <span class="job-time" title="${esc(fmtTime(job.updated))}">${job.updated ? relativeTime(job.updated) : ''}</span>
                 </div>
                 <div class="job-actions">
-                    <button class="log-btn" onclick="event.stopPropagation(); openLog('${job.log_key}','stdout')" title="View stdout">out</button>
-                    <button class="log-btn log-btn-err" onclick="event.stopPropagation(); openLog('${job.log_key}','stderr')" title="View stderr">err</button>
-                    <button class="expand-btn" onclick="toggleJobExpand('${job.id}')" title="Toggle details">
+                    <button class="log-btn" onclick="event.stopPropagation(); openLog(${idArg},'stdout')" title="View stdout">out</button>
+                    <button class="log-btn log-btn-err" onclick="event.stopPropagation(); openLog(${idArg},'stderr')" title="View stderr">err</button>
+                    <button class="expand-btn" onclick="toggleJobExpand(${idArg})" title="Toggle details">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
                     </button>
                 </div>
             </div>
-            <div class="job-row-details" id="job-details-${job.id}">
-                <div class="job-details-loading">Loading details...</div>
+            <div class="job-row-details" id="job-details-${id}">
+                ${isExpanded && recentDetailsHtml[job.id] ? recentDetailsHtml[job.id] : '<div class="job-details-loading">Loading details...</div>'}
             </div>
         </div>`;
     }).join('');
     updateBatchActionsVisibility('recent');
 }
 
+// Rendered details of expanded finished jobs, kept across list refreshes.
+const recentDetailsHtml = {};
+
 async function toggleJobExpand(jobId) {
     const detailsEl = document.getElementById(`job-details-${jobId}`);
     const rowEl = detailsEl?.closest('.job-row');
     if (!detailsEl || !rowEl) return;
 
-    const isExpanded = rowEl.classList.contains('expanded');
-
-    if (isExpanded) {
+    if (rowEl.classList.contains('expanded')) {
         rowEl.classList.remove('expanded');
         expandedJobs.delete(jobId);
-    } else {
-        rowEl.classList.add('expanded');
-        expandedJobs.add(jobId);
-
-        // Load details if not already loaded
-        if (detailsEl.querySelector('.job-details-loading')) {
-            try {
-                const res = await fetch(`/api/job_details/${jobId}`);
-                const details = res.ok ? await res.json() : {};
-                const job = allRecentJobs.find(j => j.id === jobId) || allRunningJobs.find(j => j.id === jobId) || {};
-
-                detailsEl.innerHTML = `
-                    <div class="details-grid">
-                        <div class="detail-item">
-                            <span class="detail-label">Partition</span>
-                            <span class="detail-value">${job.partition || 'N/A'}</span>
-                        </div>
-                        <div class="detail-item">
-                            <span class="detail-label">Runtime</span>
-                            <span class="detail-value">${job.elapsed || job.runtime || 'N/A'}</span>
-                        </div>
-                        ${details.exit_code ? `
-                        <div class="detail-item">
-                            <span class="detail-label">Exit Code</span>
-                            <span class="detail-value ${details.exit_code === '0' ? 'exit-success' : 'exit-error'}">${details.exit_code}</span>
-                        </div>` : ''}
-                        ${details.cpu_eff ? `
-                        <div class="detail-item">
-                            <span class="detail-label">CPU Eff.</span>
-                            <span class="detail-value">${details.cpu_eff}</span>
-                        </div>` : ''}
-                        ${details.mem_eff ? `
-                        <div class="detail-item">
-                            <span class="detail-label">Mem Eff.</span>
-                            <span class="detail-value">${details.mem_eff}</span>
-                        </div>` : ''}
-                        ${job.gres ? `
-                        <div class="detail-item">
-                            <span class="detail-label">Resources</span>
-                            <span class="detail-value">${job.gres}</span>
-                        </div>` : ''}
-                        ${details.end_time && details.end_time !== 'N/A' ? `
-                        <div class="detail-item">
-                            <span class="detail-label">Ended</span>
-                            <span class="detail-value">${details.end_time}</span>
-                        </div>` : ''}
-                    </div>
-                `;
-            } catch (err) {
-                console.error('Error loading job details:', err);
-                detailsEl.innerHTML = '<div class="details-error">Failed to load details</div>';
-            }
-        }
+        return;
     }
+    rowEl.classList.add('expanded');
+    expandedJobs.add(jobId);
+    if (recentDetailsHtml[jobId]) return;
+
+    try {
+        const res = await fetch(`/api/job_details/${encodeURIComponent(jobId)}`);
+        const details = res.ok ? await res.json() : {};
+        const job = allRecentJobs.find(j => j.id === jobId) || {};
+        const item = (label, value, cls = '') => value || value === 0 ? `
+            <div class="detail-item">
+                <span class="detail-label">${label}</span>
+                <span class="detail-value ${cls}">${esc(value)}</span>
+            </div>` : '';
+        const known = !details.error;
+
+        recentDetailsHtml[jobId] = `
+            <div class="details-grid">
+                ${known ? '' : item('Slurm', 'No accounting record (only log files were found)')}
+                ${item('State', details.state)}
+                ${item('Exit Code', details.exit_code, details.exit_code === '0' ? 'exit-success' : 'exit-error')}
+                ${item('Partition', details.partition || job.partition)}
+                ${item('Runtime', details.elapsed || job.elapsed)}
+                ${item('Started', details.start_time ? fmtTime(details.start_time) : '')}
+                ${item('Ended', details.end_time && details.end_time !== 'N/A' ? fmtTime(details.end_time) : '')}
+                ${item('CPU Eff.', details.cpu_eff !== 'N/A' ? details.cpu_eff : '')}
+                ${item('Mem Eff.', details.mem_eff !== 'N/A' ? details.mem_eff : '')}
+                ${item('Peak Memory', details.max_rss ? `${details.max_rss} of ${details.req_mem}` : '')}
+                ${item('Resources', [details.cpus ? `${details.cpus} CPU` : '', details.gpus ? `${details.gpus} GPU` : ''].filter(Boolean).join(' · '))}
+                ${item('Node', details.nodelist)}
+                ${item('Work Dir', details.work_dir)}
+            </div>
+            ${known ? `
+            <div class="job-detail-actions">
+                <button class="log-btn" onclick="viewScript(${jsArg(jobId)})">script</button>
+                ${job.owned ? `<button class="log-btn" onclick="openResubmit(${jsArg(jobId)})">resubmit</button>` : ''}
+            </div>` : ''}
+        `;
+    } catch (err) {
+        console.error('Error loading job details:', err);
+        recentDetailsHtml[jobId] = '<div class="details-error">Failed to load details</div>';
+    }
+    const current = document.getElementById(`job-details-${jobId}`);
+    if (current) current.innerHTML = recentDetailsHtml[jobId];
 }
 
 async function cancelJob(jobId) {
-    if (!confirm(`Cancel job ${jobId}?`)) return;
+    if (!confirm(`Cancel job ${jobLabel(jobId)}?`)) return;
     try {
-        const res = await fetch(`/api/cancel/${jobId}`, { method: 'POST' });
+        const res = await fetch(`/api/cancel/${encodeURIComponent(jobId)}`, { method: 'POST' });
         if (res.ok) {
+            lastJobsPayload = '';
             await fetchJobs();
         } else {
-            alert('Failed to cancel job');
+            const data = await res.json().catch(() => ({}));
+            alert(`Could not cancel job ${jobId}: ${data.error || `HTTP ${res.status}`}`);
         }
     } catch (err) {
         console.error(err);
-        alert('Error canceling job');
+        alert('Error canceling job: the dashboard server did not respond');
     }
 }
 
+function showLogMessage(message) {
+    const summary = document.getElementById('error-summary');
+    if (summary) summary.remove();
+    originalLogContent = '';
+    logPanel.innerHTML = `<div class="log-message">${esc(message)}</div>`;
+}
+
 function openLog(logKey, kind) {
+    if (typeof currentView !== 'undefined' && currentView !== 'table') setView('table');
     currentLogKey = logKey;
     currentLogKind = kind;
-    logTitle.textContent = `Logs: ${logKey} (${kind})`;
-    logPanel.innerHTML = '';
-    originalLogContent = '';
+    logTitle.textContent = `Logs: ${jobLabel(logKey)} (${kind})`;
+    logTitle.title = '';
+    showLogMessage('Loading…');
+    dismissedErrors = new Set();
     clearLogSearch();
     if (logStream) logStream.close();
 
-    // Update annotation count for new log
     const currentAnnotations = getAnnotationsForCurrentLog();
     updateAnnotationCount(Object.keys(currentAnnotations).length);
 
-    document.querySelectorAll('tbody tr').forEach(row => {
+    document.querySelectorAll('[data-log-key]').forEach(row => {
         row.classList.toggle('active-log', row.dataset.logKey === logKey);
     });
 
     const params = new URLSearchParams({ log_key: logKey, kind });
-    logStream = new EventSource(`/stream_log?${params.toString()}`);
-    logStream.onmessage = evt => {
+    const stream = new EventSource(`/stream_log?${params.toString()}`);
+    logStream = stream;
+    stream.onmessage = evt => {
+        if (logStream !== stream) return;
+        let payload;
         try {
-            const payload = JSON.parse(evt.data);
-            let stick = autoScroll && isNearBottom();
-            if (payload.reset) {
-                logPanel.innerHTML = '';
-                originalLogContent = '';
-                logPanel.scrollTop = 0;
-                stick = false;
-            }
-            if (Object.prototype.hasOwnProperty.call(payload, 'snapshot')) {
-                originalLogContent = payload.snapshot;
-                renderLogWithAnnotations();
-                logPanel.scrollTop = 0;
-                stick = false;
-            }
-            if (payload.append) {
-                originalLogContent += payload.append;
-                renderLogWithAnnotations();
-            }
-            if (stick && autoScroll) {
-                logPanel.scrollTop = logPanel.scrollHeight;
-            }
+            payload = JSON.parse(evt.data);
         } catch (e) {
             console.error(e);
+            return;
+        }
+        if (payload.error) {
+            showLogMessage(payload.error);
+            stream.close();
+            return;
+        }
+        if (payload.path) {
+            logTitle.title = payload.path;
+        }
+        if (payload.reset) {
+            showLogMessage('Log file was rewritten; reloading…');
+        }
+        if (Object.prototype.hasOwnProperty.call(payload, 'snapshot')) {
+            originalLogContent = payload.snapshot;
+            if (!payload.snapshot) {
+                showLogMessage('The log file is empty so far.');
+            } else {
+                renderLogWithAnnotations();
+                logPanel.scrollTop = autoScroll ? logPanel.scrollHeight : 0;
+            }
+        }
+        if (payload.append) {
+            originalLogContent += payload.append;
+            if (originalLogContent.length > MAX_LOG_CHARS) {
+                const cut = originalLogContent.indexOf('\n', originalLogContent.length - MAX_LOG_CHARS);
+                originalLogContent = originalLogContent.slice(cut + 1);
+            }
+            scheduleLogRender();
         }
     };
-    logStream.onerror = () => {
-        if (logStream) {
-            logStream.close();
+    stream.onerror = () => {
+        // The browser retries on its own while the stream stays open; a closed
+        // stream means the server ended it (job log gone or server stopped).
+        if (stream.readyState === EventSource.CLOSED && logStream === stream) {
             logStream = null;
         }
     };
@@ -2110,7 +2224,7 @@ document.addEventListener('keydown', (e) => {
     }
     // Ctrl+F or Cmd+F in log panel area focuses log search
     if ((e.key === 'f' || e.key === 'F') && (e.ctrlKey || e.metaKey)) {
-        const logWrapper = document.getElementById('log-wrapper');
+        const logWrapper = logPanel.parentElement;
         if (logWrapper && logWrapper.contains(document.activeElement)) {
             e.preventDefault();
             logSearchInput.focus();
@@ -2206,11 +2320,12 @@ async function loadTimelineData() {
         const res = await fetch(`/api/job_history?days=${days}`);
         if (!res.ok) throw new Error('Failed to load');
         const data = await res.json();
+        if (data.error && !data.jobs.length) throw new Error(data.error);
         timelineData = data.jobs;
         filterTimeline();
     } catch (err) {
         console.error('Timeline load error:', err);
-        container.innerHTML = '<div class="timeline-empty"><div class="timeline-empty-icon">⚠️</div><div class="timeline-empty-text">Failed to load job history</div></div>';
+        container.innerHTML = `<div class="timeline-empty"><div class="timeline-empty-icon">⚠️</div><div class="timeline-empty-text">Failed to load job history${err && err.message ? ': ' + esc(err.message) : ''}</div></div>`;
     }
 }
 
@@ -2453,22 +2568,22 @@ function renderTimelineJob(job, startTime, endTime, visibleRangeMs, indent) {
     const leftPercent = ((clampedStart - startTime.getTime()) / visibleRangeMs) * 100;
     const widthPercent = ((clampedEnd - clampedStart) / visibleRangeMs) * 100;
 
-    const jobJson = JSON.stringify(job).replace(/"/g, '&quot;');
+    const jobJson = esc(JSON.stringify(job));
 
     return `
         <div class="timeline-row ${indent ? 'timeline-row-child' : ''}">
-            <div class="timeline-job-name" onclick="openLog('${job.log_key}', 'stdout')" title="${job.name}">
-                ${indent}${job.name}
-                <span class="job-id">#${job.id}</span>
+            <div class="timeline-job-name" onclick="openLog(${jsArg(job.log_key)}, 'stdout')" title="${esc(job.name)}">
+                ${indent}${esc(job.name)}
+                <span class="job-id">#${esc(job.id)}</span>
             </div>
             <div class="timeline-grid">
                 <div class="timeline-bar ${job.state_category}"
                      style="left: ${leftPercent}%; width: ${Math.max(widthPercent, 0.5)}%;"
-                     onclick="openLog('${job.log_key}', 'stdout')"
+                     onclick="openLog(${jsArg(job.log_key)}, 'stdout')"
                      onmouseenter="showTimelineTooltip(event, ${jobJson})"
                      onmouseleave="hideTimelineTooltip()"
-                     title="${job.name} - ${job.state} - ${job.elapsed}">
-                    ${widthPercent > 5 ? job.elapsed : ''}
+                     title="${esc(job.name)} - ${esc(job.state)} - ${esc(job.elapsed)}">
+                    ${widthPercent > 5 ? esc(job.elapsed) : ''}
                 </div>
             </div>
         </div>
@@ -2495,15 +2610,15 @@ function renderTimelineGroup(group, startTime, endTime, visibleRangeMs) {
 
     let html = `
         <div class="timeline-row timeline-row-group">
-            <div class="timeline-job-name timeline-group-name" onclick="toggleTimelineGroup('${group.baseId}')" title="${group.name}">
+            <div class="timeline-job-name timeline-group-name" onclick="toggleTimelineGroup('${esc(group.baseId)}')" title="${esc(group.name)}">
                 <span class="timeline-group-toggle">${expandIcon}</span>
-                ${group.name}
+                ${esc(group.name)}
                 <span class="timeline-group-count">[${group.total}]</span>
             </div>
             <div class="timeline-grid">
                 <div class="timeline-bar timeline-bar-group ${group.state_category}"
                      style="left: ${leftPercent}%; width: ${Math.max(widthPercent, 0.5)}%;"
-                     title="${group.name} - ${groupInfo}">
+                     title="${esc(group.name)} - ${groupInfo}">
                     ${widthPercent > 8 ? groupInfo : ''}
                 </div>
             </div>
@@ -2598,31 +2713,31 @@ function showTimelineTooltip(event, job) {
     tooltip.className = 'timeline-tooltip';
     tooltip.id = 'timeline-tooltip';
     tooltip.innerHTML = `
-        <div class="timeline-tooltip-header">${job.name}</div>
+        <div class="timeline-tooltip-header">${esc(job.name)}</div>
         <div class="timeline-tooltip-row">
             <span class="timeline-tooltip-label">Job ID:</span>
-            <span class="timeline-tooltip-value">${job.id}</span>
+            <span class="timeline-tooltip-value">${esc(job.id)}</span>
         </div>
         <div class="timeline-tooltip-row">
             <span class="timeline-tooltip-label">State:</span>
-            <span class="timeline-tooltip-value">${job.state}</span>
+            <span class="timeline-tooltip-value">${esc(job.state)}</span>
         </div>
         <div class="timeline-tooltip-row">
             <span class="timeline-tooltip-label">Start:</span>
-            <span class="timeline-tooltip-value">${job.start}</span>
+            <span class="timeline-tooltip-value">${esc(fmtTime(job.start))}</span>
         </div>
         <div class="timeline-tooltip-row">
             <span class="timeline-tooltip-label">End:</span>
-            <span class="timeline-tooltip-value">${job.end || 'Running'}</span>
+            <span class="timeline-tooltip-value">${job.end ? esc(fmtTime(job.end)) : 'Running'}</span>
         </div>
         <div class="timeline-tooltip-row">
             <span class="timeline-tooltip-label">Duration:</span>
-            <span class="timeline-tooltip-value">${job.elapsed}</span>
+            <span class="timeline-tooltip-value">${esc(job.elapsed)}</span>
         </div>
         ${job.partition ? `
         <div class="timeline-tooltip-row">
             <span class="timeline-tooltip-label">Partition:</span>
-            <span class="timeline-tooltip-value">${job.partition}</span>
+            <span class="timeline-tooltip-value">${esc(job.partition)}</span>
         </div>
         ` : ''}
     `;
@@ -2670,6 +2785,7 @@ async function loadDagData() {
         const res = await fetch('/api/job_dependencies');
         if (!res.ok) throw new Error('Failed to load');
         dagData = await res.json();
+        if (dagData.error) showBanner('dag', `Pipelines may be incomplete: ${dagData.error}`); else clearBanner('dag');
 
         renderPipelineList();
         statusEl.textContent = `${dagData.nodes.length} jobs, ${dagData.pipelines.length} pipelines`;
@@ -2694,7 +2810,7 @@ function renderPipelineList() {
 
     pipelineList.innerHTML = dagData.pipelines.map((pipeline, idx) => `
         <div class="dag-pipeline-item ${selectedPipeline === idx ? 'selected' : ''}" onclick="selectPipeline(${idx})">
-            <div class="dag-pipeline-name">${pipeline.name}</div>
+            <div class="dag-pipeline-name">${esc(pipeline.name)}</div>
             <div class="dag-pipeline-meta">
                 <span class="dag-pipeline-jobs">${pipeline.total} jobs</span>
                 <span class="dag-pipeline-progress">
@@ -2736,7 +2852,7 @@ function renderDagGraph(pipelineIdx) {
     let html = `
         <div class="dag-graph">
             <div class="dag-graph-header">
-                <h3>${pipeline.name}</h3>
+                <h3>${esc(pipeline.name)}</h3>
                 <span class="dag-graph-progress">${pipeline.completed}/${pipeline.total} completed (${pipeline.progress}%)</span>
             </div>
             <div class="dag-graph-container">
@@ -2755,10 +2871,10 @@ function renderDagGraph(pipelineIdx) {
 
             const stateClass = node.state_category || 'pending';
             html += `
-                <div class="dag-node ${stateClass}" data-job-id="${node.id}" onclick="showDagNodeDetails('${node.id}')" title="${node.name} (${node.state})">
-                    <div class="dag-node-name">${node.name}</div>
-                    <div class="dag-node-id">#${node.id}</div>
-                    <div class="dag-node-state">${node.state}</div>
+                <div class="dag-node ${stateClass}" data-job-id="${esc(node.id)}" onclick="showDagNodeDetails('${esc(node.id)}')" title="${esc(node.name)} (${esc(node.state)})">
+                    <div class="dag-node-name">${esc(node.name)}</div>
+                    <div class="dag-node-id">#${esc(node.id)}</div>
+                    <div class="dag-node-state">${esc(node.state)}</div>
                 </div>
             `;
         });
@@ -2784,7 +2900,7 @@ function renderDagGraph(pipelineIdx) {
                     ${edges.map(e => {
                         const fromNode = nodeMap[e.from];
                         const toNode = nodeMap[e.to];
-                        return `<li><span class="dag-edge-from">${fromNode?.name || e.from}</span> → <span class="dag-edge-to">${toNode?.name || e.to}</span> <span class="dag-edge-type">(${e.type})</span></li>`;
+                        return `<li><span class="dag-edge-from">${esc(fromNode?.name || e.from)}</span> → <span class="dag-edge-to">${esc(toNode?.name || e.to)}</span> <span class="dag-edge-type">(${esc(e.type)})</span></li>`;
                     }).join('')}
                 </ul>
             </div>
@@ -2862,37 +2978,37 @@ function showDagNodeDetails(jobId) {
     tooltip.id = 'dag-tooltip';
     tooltip.innerHTML = `
         <div class="dag-tooltip-header">
-            <span class="dag-tooltip-name">${node.name}</span>
+            <span class="dag-tooltip-name">${esc(node.name)}</span>
             <button class="dag-tooltip-close" onclick="hideDagTooltip()">&times;</button>
         </div>
         <div class="dag-tooltip-body">
             <div class="dag-tooltip-row">
                 <span class="dag-tooltip-label">Job ID:</span>
-                <span class="dag-tooltip-value">${node.id}</span>
+                <span class="dag-tooltip-value">${esc(node.id)}</span>
             </div>
             <div class="dag-tooltip-row">
                 <span class="dag-tooltip-label">State:</span>
-                <span class="dag-tooltip-value dag-state-${node.state_category}">${node.state}</span>
+                <span class="dag-tooltip-value dag-state-${node.state_category}">${esc(node.state)}</span>
             </div>
             <div class="dag-tooltip-row">
                 <span class="dag-tooltip-label">Partition:</span>
-                <span class="dag-tooltip-value">${node.partition || 'N/A'}</span>
+                <span class="dag-tooltip-value">${esc(node.partition || 'N/A')}</span>
             </div>
             ${node.start_time ? `
             <div class="dag-tooltip-row">
                 <span class="dag-tooltip-label">Start:</span>
-                <span class="dag-tooltip-value">${node.start_time}</span>
+                <span class="dag-tooltip-value">${esc(fmtTime(node.start_time))}</span>
             </div>
             ` : ''}
             ${node.end_time ? `
             <div class="dag-tooltip-row">
                 <span class="dag-tooltip-label">End:</span>
-                <span class="dag-tooltip-value">${node.end_time}</span>
+                <span class="dag-tooltip-value">${esc(fmtTime(node.end_time))}</span>
             </div>
             ` : ''}
         </div>
         <div class="dag-tooltip-actions">
-            <button onclick="openLog('${node.name}::${node.id}', 'stdout'); hideDagTooltip();">View Logs</button>
+            <button onclick="openLog(${jsArg(node.id)}, 'stdout'); hideDagTooltip();">View Logs</button>
         </div>
     `;
 
@@ -2922,7 +3038,7 @@ async function loadInsights() {
     try {
         const [insightsRes, costRes] = await Promise.all([
             fetch(`/api/insights?days=${insightsPeriod}`),
-            fetch(`/api/cost?days=${insightsPeriod}`)
+            fetch(`/api/usage?days=${insightsPeriod}`)
         ]);
 
         if (insightsRes.ok) {
@@ -2966,21 +3082,23 @@ function renderInsights() {
     let html = '';
 
     // Row 1: Efficiency + Stats side by side
-    const grade = eff.grade || 'C';
-    const gradeClass = 'grade-' + grade.toLowerCase();
-
+    const pct = value => (value === null || value === undefined) ? '—' : `${value}%`;
     html += `
-        <div class="insight-card efficiency-card ${gradeClass}">
+        <div class="insight-card efficiency-card">
             <div class="insight-content">
-                <div class="insight-title">Efficiency Score</div>
-                <div class="efficiency-display">
-                    <span class="efficiency-grade">${grade}</span>
-                    <div class="efficiency-info">
-                        <span class="efficiency-label">${eff.label || 'Analyzing...'}</span>
-                        <div class="efficiency-details">
-                            <span>Memory: ${eff.memory_efficiency || '—'}%</span>
-                            <span>Time: ${eff.time_efficiency || '—'}%</span>
-                        </div>
+                <div class="insight-title">Resource Efficiency <span class="insight-note">${eff.jobs_analyzed || 0} completed jobs</span></div>
+                <div class="stats-row">
+                    <div class="stat-box" title="CPU time used / (cores × runtime)">
+                        <span class="stat-value">${pct(eff.cpu_efficiency)}</span>
+                        <span class="stat-label">CPU</span>
+                    </div>
+                    <div class="stat-box" title="Peak memory / requested memory">
+                        <span class="stat-value">${pct(eff.memory_efficiency)}</span>
+                        <span class="stat-label">Memory</span>
+                    </div>
+                    <div class="stat-box" title="Runtime / time limit">
+                        <span class="stat-value">${pct(eff.time_efficiency)}</span>
+                        <span class="stat-label">Time limit</span>
                     </div>
                 </div>
             </div>
@@ -3037,7 +3155,7 @@ function renderInsights() {
                                 const parts = [];
                                 if (item.cpu_hours > 0) parts.push(`${formatHours(item.cpu_hours)} CPU`);
                                 if (item.gpu_hours > 0) parts.push(`${formatHours(item.gpu_hours)} GPU`);
-                                return `<span class="resource-tag"><strong>${item.partition}</strong> ${parts.join(', ')}</span>`;
+                                return `<span class="resource-tag"><strong>${esc(item.partition)}</strong> ${parts.join(', ')}</span>`;
                             }).join('')}
                         </div>
                     ` : ''}
@@ -3062,7 +3180,7 @@ function renderInsights() {
                 <div class="recommendation-item">
                     <span class="rec-icon">⏱️</span>
                     <div class="rec-content">
-                        <div class="rec-text">${time.recommendation}</div>
+                        <div class="rec-text">${esc(time.recommendation)}</div>
                         <div class="rec-meta">Based on ${time.sample_count} jobs</div>
                     </div>
                 </div>`;
@@ -3074,7 +3192,7 @@ function renderInsights() {
                 <div class="recommendation-item">
                     <span class="rec-icon">💾</span>
                     <div class="rec-content">
-                        <div class="rec-text">${mem.recommendation}</div>
+                        <div class="rec-text">${esc(mem.recommendation)}</div>
                         <div class="rec-meta">Based on ${mem.sample_count} jobs</div>
                     </div>
                 </div>`;
@@ -3095,7 +3213,7 @@ function renderInsights() {
                         ${topNames.map((job, i) => `
                             <div class="job-type-row">
                                 <span class="job-rank">${i + 1}</span>
-                                <span class="job-type-name" title="${job.name}">${job.name}</span>
+                                <span class="job-type-name" title="${esc(job.name)}">${esc(job.name)}</span>
                                 <span class="job-type-count">${job.count.toLocaleString()}</span>
                                 <div class="job-type-bar" style="--bar-width: ${(job.count / maxCount) * 100}%"></div>
                             </div>
@@ -3114,12 +3232,12 @@ function renderInsights() {
                     <div class="insight-title">⚠️ Failure Alerts</div>
                     <div class="alerts-list">
                         ${insightsData.failure_patterns.slice(0, 3).map(pattern => {
-                            const failRate = pattern.failure_rate || Math.round((pattern.failed / pattern.total) * 100);
+                            const failRate = pattern.failure_rate;
                             return `
                                 <div class="alert-item">
                                     <div class="alert-info">
-                                        <strong>${pattern.partition || 'Pattern'}</strong>
-                                        <span class="alert-detail">${pattern.failed}/${pattern.total} jobs failed</span>
+                                        <strong>${esc(pattern.label)}</strong>
+                                        <span class="alert-detail">${esc(pattern.type)}: ${pattern.failed}/${pattern.total} jobs failed or timed out</span>
                                     </div>
                                     <span class="alert-rate">${failRate}%</span>
                                 </div>`;
@@ -3158,18 +3276,6 @@ function toggleInsightsPanel() {
     insightsCollapsed = !insightsCollapsed;
     localStorage.setItem('insightsCollapsed', insightsCollapsed);
     renderInsights();
-}
-
-// Load prediction for a running job
-async function loadJobPrediction(jobId) {
-    try {
-        const res = await fetch(`/api/predict/${jobId}`);
-        if (!res.ok) return null;
-        return await res.json();
-    } catch (err) {
-        console.error('Prediction load error:', err);
-        return null;
-    }
 }
 
 // Heatmap Functions
@@ -3542,7 +3648,7 @@ async function openJobDetailsModal(jobId) {
     content.innerHTML = '<div class="job-details-loading">Loading job details...</div>';
 
     try {
-        const res = await fetch(`/api/job_details/${jobId}`);
+        const res = await fetch(`/api/job_details/${encodeURIComponent(jobId)}`);
         const details = res.ok ? await res.json() : {};
 
         // Find the job in our cached data
@@ -3730,9 +3836,11 @@ async function submitJob() {
             return;
         }
 
-        alert(`Job submitted successfully!\nJob ID: ${data.job_id}`);
         closeSubmitModal();
+        lastJobsPayload = '';
         fetchJobs(); // Refresh job list
+        showBanner('submitted', `Submitted job ${data.job_id}.`);
+        setTimeout(() => clearBanner('submitted'), 6000);
     } catch (err) {
         console.error('Submit error:', err);
         alert('Error submitting job');
@@ -3815,17 +3923,17 @@ function renderTemplateList() {
     list.innerHTML = jobTemplates.map(t => `
         <div class="template-item">
             <div class="template-item-info">
-                <div class="template-item-name">${t.name}</div>
-                ${t.description ? `<div class="template-item-desc">${t.description}</div>` : ''}
+                <div class="template-item-name">${esc(t.name)}</div>
+                ${t.description ? `<div class="template-item-desc">${esc(t.description)}</div>` : ''}
                 <div class="template-item-meta">
-                    ${t.partition ? `<span>Partition: ${t.partition}</span>` : ''}
-                    ${t.time_limit ? `<span>Time: ${t.time_limit}</span>` : ''}
-                    ${t.memory ? `<span>Memory: ${t.memory}</span>` : ''}
+                    ${t.partition ? `<span>Partition: ${esc(t.partition)}</span>` : ''}
+                    ${t.time_limit ? `<span>Time: ${esc(t.time_limit)}</span>` : ''}
+                    ${t.memory ? `<span>Memory: ${esc(t.memory)}</span>` : ''}
                 </div>
             </div>
             <div class="template-item-actions">
-                <button class="btn-small" onclick="useTemplate('${t.id}')">Use</button>
-                <button class="btn-small btn-danger" onclick="deleteTemplate('${t.id}')">Delete</button>
+                <button class="btn-small" onclick="useTemplate(${jsArg(t.id)})">Use</button>
+                <button class="btn-small btn-danger" onclick="deleteTemplate(${jsArg(t.id)})">Delete</button>
             </div>
         </div>
     `).join('');
@@ -3846,7 +3954,7 @@ async function deleteTemplate(templateId) {
     if (!confirm('Are you sure you want to delete this template?')) return;
 
     try {
-        const res = await fetch(`/api/templates/${templateId}`, {
+        const res = await fetch(`/api/templates/${encodeURIComponent(templateId)}`, {
             method: 'DELETE'
         });
 
@@ -3975,7 +4083,7 @@ async function batchCancel(tableType) {
 
     for (const jobId of jobIds) {
         try {
-            const res = await fetch(`/api/cancel/${jobId}`, { method: 'POST' });
+            const res = await fetch(`/api/cancel/${encodeURIComponent(jobId)}`, { method: 'POST' });
             if (res.ok) {
                 succeeded++;
                 selectedSet.delete(jobId);
@@ -4011,34 +4119,12 @@ async function batchResubmit(tableType) {
     let skipped = 0;
 
     for (const jobId of jobIds) {
-        // First get submission info
         try {
-            const infoRes = await fetch(`/api/job_submit_info/${jobId}`);
-            if (!infoRes.ok) {
-                skipped++;
-                continue;
-            }
-
-            const info = await infoRes.json();
-            if (!info.script_path) {
-                skipped++;
-                continue;
-            }
-
-            // Resubmit with original parameters
             const res = await fetch('/api/resubmit', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    script_path: info.script_path,
-                    work_dir: info.work_dir,
-                    partition: info.partition,
-                    time_limit: info.timelimit,
-                    memory: info.req_mem,
-                    cpus: info.req_cpus
-                })
+                body: JSON.stringify({ job_id: jobId })
             });
-
             if (res.ok) {
                 succeeded++;
             } else {
@@ -4054,7 +4140,7 @@ async function batchResubmit(tableType) {
 
     let msg = `Resubmitted ${succeeded} job(s).`;
     if (failed > 0) msg += ` ${failed} failed.`;
-    if (skipped > 0) msg += ` ${skipped} skipped (no script info).`;
+    lastJobsPayload = '';
     alert(msg);
 }
 
@@ -4074,8 +4160,10 @@ function batchExport(tableType) {
         state: job.state,
         runtime: job.runtime,
         partition: job.partition,
-        updated: job.updated || job.start_time,
-        log_key: job.log_key
+        user: job.user,
+        exit_code: job.exit_code,
+        elapsed: job.elapsed,
+        updated: job.updated || job.start_time
     }));
 
     // Show format selection
@@ -4673,5 +4761,7 @@ restoreLayoutState();
 fetchJobs();
 loadSavedSearches(); // Load saved searches
 loadFiltersFromUrl(); // Load filters from URL
-setInterval(fetchJobs, 8000);
-setInterval(updateExpandedJobResources, 30000); // Update resources every 30 seconds
+// Poll only while the tab is visible; refresh at once when it becomes visible.
+setInterval(() => { if (!document.hidden) fetchJobs(); }, 8000);
+setInterval(() => { if (!document.hidden) updateExpandedJobResources(); }, 30000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) fetchJobs(); });
