@@ -3,7 +3,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/slurm-dashboard.svg)](https://pypi.org/project/slurm-dashboard/)
 [![Python versions](https://img.shields.io/pypi/pyversions/slurm-dashboard.svg)](https://pypi.org/project/slurm-dashboard/)
 
-A lightweight, real-time web dashboard for monitoring Slurm HPC cluster jobs. View logs, track resource usage, analyze job patterns, and manage your workloads from a clean, modern interface.
+A lightweight web app for monitoring and managing your Slurm jobs: live queue, job history, log streaming, submit / cancel / resubmit, and usage analytics.
 
 ![Dashboard Overview](https://raw.githubusercontent.com/andropar/slurmboard/main/docs/images/dashboard-main.png)
 
@@ -11,12 +11,13 @@ A lightweight, real-time web dashboard for monitoring Slurm HPC cluster jobs. Vi
 
 Slurm Dashboard is a small Flask app and CLI for researchers and ML engineers who run batches of experiments on Slurm clusters. It brings queue state, logs, resource usage, and job history into one browser view so long-running training or analysis jobs are easier to debug.
 
-- Tracks live and historical jobs through Slurm's `squeue` and `sacct` commands
-- Streams stdout/stderr from configurable cluster log layouts
-- Surfaces failure patterns, resource efficiency, GPU usage, and submission activity
-- Ships as a PyPI package with a `slurm-dashboard` command-line entry point
+- Reads jobs straight from Slurm (`squeue`, `sacct`), so every job shows up, with or without log files
+- Finds and streams stdout/stderr using the paths Slurm recorded, with a configurable pattern as fallback
+- Submits, cancels and resubmits jobs; saves reusable job templates
+- Shows CPU / memory / time-limit efficiency, failure patterns and CPU/GPU hours
+- Protected by an access token, because login nodes are shared
 
-The project is intentionally lightweight: no database, no cluster daemon, and no scheduler-side service. It can run on a login node behind an SSH tunnel and read the same Slurm state a user can already access from the shell.
+The project is intentionally lightweight: no database, no cluster daemon, and no scheduler-side service. It runs on a login node behind an SSH tunnel and reads the same Slurm state you can already access from the shell. One `squeue` and one `sacct` result are cached and shared by all views and browser tabs, so it stays gentle on the scheduler.
 
 ## Installation
 
@@ -26,14 +27,15 @@ pip install slurm-dashboard
 
 ## Features
 
-- **Real-time job monitoring** - Live log streaming with auto-refresh
-- **Multiple views** - Table, Timeline, Pipeline DAG, Heatmap, and Insights
-- **Job management** - Submit, cancel, and resubmit jobs with templates
-- **Smart log analysis** - Automatic error detection and highlighting
-- **Resource tracking** - CPU/GPU hours, memory efficiency, partition health
-- **Analytics dashboard** - Job patterns, peak hours, failure analysis
-- **Batch operations** - Select multiple jobs for cancel/resubmit/export
-- **Dark mode** - Easy on the eyes during those late-night debugging sessions
+- **Live queue** - running and pending jobs, pending reason and the scheduler's planned start time
+- **Job history** - finished jobs from accounting with state, exit code, runtime and efficiency
+- **Array jobs** - every array task is its own row with its own logs
+- **Log viewer** - live streaming, search, error detection and highlighting, annotations, side-by-side comparison
+- **Job management** - submit (script file or pasted script), cancel, resubmit with changed resources, batch actions, templates
+- **Views** - Table, Timeline, Pipeline DAG, Heatmap, and Insights
+- **All-users mode** - `--all-users` shows the whole cluster, read-only for jobs that are not yours
+- **Clear failures** - if a Slurm command fails or times out, the page says so and keeps the last data
+- **Dark mode**
 
 ## Screenshots
 
@@ -71,17 +73,26 @@ pip install slurm-dashboard
 ## Quick Start
 
 ```bash
-# Basic usage - uses current user and default log location
 slurm-dashboard
-
-# Specify log directory
-slurm-dashboard --log-root /path/to/your/logs
-
-# Full options
-slurm-dashboard --log-root ~/slurm-logs --user myusername --port 8080
 ```
 
-Then open `http://localhost:5000` in your browser.
+The command prints a link such as `http://127.0.0.1:5000/?token=...`. Open it once; the browser then remembers the token in a cookie.
+
+```bash
+# More options
+slurm-dashboard --port 8080 --history-days 14 --log-root /path/to/your/logs
+```
+
+## Security
+
+The dashboard can submit and cancel jobs as you, and on a login node any other user can connect to a port bound to `127.0.0.1`. Every request therefore needs an access token.
+
+- The token is generated on first start and stored in `~/.config/slurm-dashboard/token` (readable only by you), so bookmarks keep working across restarts. Delete the file to rotate it.
+- `--token VALUE` or the `SLURM_DASHBOARD_TOKEN` environment variable set your own token.
+- API clients can send `Authorization: Bearer <token>`.
+- `--no-auth` turns the check off. Only use it on a machine nobody else can log in to.
+- Scripts and logs are always looked up by job ID from Slurm's own records; the browser cannot ask the server to read an arbitrary path.
+- Traffic is plain HTTP. Use an SSH tunnel rather than `--host 0.0.0.0`.
 
 ## Configuration
 
@@ -91,10 +102,26 @@ Then open `http://localhost:5000` in your browser.
 |--------|---------|-------------|
 | `--host` | `127.0.0.1` | Host to bind to |
 | `--port` | `5000` | Port to bind to |
-| `--log-root` | `~/slurm-logs` | Root directory for Slurm log files |
-| `--log-pattern` | `{name}/job.{stream}.{id}` | Log file path pattern |
-| `--user` | Current user | Slurm username to filter jobs |
-| `--refresh-cache` | `20` | Cache refresh interval in seconds |
+| `--user` | Current user | Whose jobs to show |
+| `--all-users` | off | Show every user's jobs (you can still only change your own) |
+| `--history-days` | `7` | Days of finished jobs in the job list (max 90) |
+| `--log-root` | `~/slurm-logs` | Fallback directory to search for log files |
+| `--log-pattern` | `{name}/job.{stream}.{id}` | Fallback log file pattern under `--log-root` |
+| `--refresh-cache` | `20` | Seconds to reuse accounting results and the log index |
+| `--token` | generated | Access token to require |
+| `--no-auth` | off | Disable the access token |
+| `-v`, `--verbose` | off | Log every Slurm command and HTTP request |
+
+### How Logs Are Found
+
+For each job the dashboard tries, in order:
+
+1. The output path the scheduler reports for running and pending jobs (`scontrol show job`).
+2. The output pattern stored in accounting (`sacct` fields `StdOut`/`StdErr`, available in recent Slurm versions), with `%j`, `%A`, `%a`, `%x`, `%u` and `%N` expanded.
+3. A file under `--log-root` that matches `--log-pattern`.
+4. Slurm's default `slurm-<jobid>.out` in the job's working directory.
+
+On a recent Slurm version this needs no configuration. On older versions, or for jobs that have aged out of accounting, set `--log-root` and `--log-pattern`. If no file is found, the log panel lists every path it tried.
 
 ### Log File Patterns
 
@@ -187,18 +214,16 @@ slurm-dashboard --port 5000
 # On your local machine (in another terminal)
 ssh -L 5000:localhost:5000 user@cluster.example.com
 
-# Then open http://localhost:5000 in your browser
+# Then open the printed link (http://127.0.0.1:5000/?token=...) in your browser
 ```
 
 ### Binding to All Interfaces
-
-To access from other machines on the same network (less secure):
 
 ```bash
 slurm-dashboard --host 0.0.0.0 --port 5000
 ```
 
-**Note:** Only do this on trusted networks. The dashboard can cancel and submit jobs.
+The access token is still required, but traffic is unencrypted, so anyone on the network path can read it. Prefer the SSH tunnel.
 
 ### Running in Background
 
@@ -220,9 +245,9 @@ slurm-dashboard --log-root ~/slurm-logs
 ## Views
 
 ### Table View (Default)
-- Running jobs with real-time status
-- Recent jobs with expandable details
-- Click any job to view its logs
+- Active jobs (running and pending) with live status
+- Finished jobs from the last `--history-days` days with expandable details
+- Click `stdout` / `stderr` to stream a job's logs
 - Quick filters for state, partition, GPU usage
 
 ### Timeline View
@@ -242,44 +267,45 @@ slurm-dashboard --log-root ~/slurm-logs
 - Success/failure rate visualization
 
 ### Insights View
-- Efficiency score (A-F grade)
-- Resource usage metrics (CPU/GPU hours)
-- Memory and time limit recommendations
-- Failure pattern detection
-- Peak hours analysis
+- CPU, memory and time-limit efficiency of completed jobs
+- CPU/GPU hours by partition
+- Memory and time-limit recommendations
+- Partitions and job names with high failure rates
 - Top job types
 
 ## Troubleshooting
 
-### "No recent logs found"
-- Check that `--log-root` points to the correct directory
-- Verify `--log-pattern` matches your log file naming
-- Ensure log files exist and are readable
+### A yellow banner says a Slurm command failed
+The message quotes the failing command (`squeue`, `sacct`, ...). Run it in a shell on the same node to see the full error. The page keeps showing the last data that loaded.
 
-### "sacct: command not found"
-- The dashboard requires Slurm commands to be in your PATH
-- Make sure you're running on a node with Slurm client tools installed
+### "Not signed in"
+Open the link with `?token=...` that the dashboard printed at startup, or copy the token from `~/.config/slurm-dashboard/token`.
 
-### Jobs not showing up
-- Check that `--user` matches the username used when submitting jobs
-- Verify jobs are in sacct history: `sacct -u $USER --starttime=now-7days`
+### "No stdout file found"
+The log panel lists the paths it tried. If your logs live elsewhere, set `--log-root` and `--log-pattern`.
 
-### Log streaming not working
-- Ensure the log files are accessible from the node running the dashboard
-- Check file permissions on the log directory
+### Finished jobs are missing
+- The list covers `--history-days` (default 7). Check `sacct -u $USER --starttime=now-7days`.
+- With `--user`, make sure the name matches the submitting user.
+
+### Efficiency shows N/A
+Memory efficiency needs job accounting with memory tracking (`JobAcctGatherType`) on the cluster; CPU efficiency needs a job that has finished at least one step.
 
 ## Development
 
 ```bash
-# Install in development mode
 pip install -e ".[dev]"
-
-# Run with debug mode
-FLASK_DEBUG=1 slurm-dashboard
-
-# Run tests
 pytest
 ```
+
+The tests run against a small fake Slurm CLI in `tests/fake_slurm/`. The same fake lets you run the dashboard on a laptop without a cluster:
+
+```bash
+python tests/fake_slurm/demo.py /tmp/demo-cluster
+PATH="$PWD/tests/fake_slurm:$PATH" FAKE_SLURM_STATE=/tmp/demo-cluster/state.json slurm-dashboard --log-root /tmp/demo-cluster/logs --all-users
+```
+
+See [CHANGELOG.md](CHANGELOG.md) for what changed between versions.
 
 ## License
 

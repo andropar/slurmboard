@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "slurm-dashboard"
-version = "0.1.1"
-description = "A lightweight web dashboard for monitoring Slurm HPC jobs"
+version = "0.2.0"
+description = "A lightweight web app for monitoring and managing Slurm HPC jobs"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.8"
@@ -27,6 +27,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: System :: Monitoring",
     "Topic :: Scientific/Engineering",
 ]
@@ -39,6 +40,7 @@ dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "ruff>=0.1.0",
+    "black>=23.0",
     "mypy>=1.0.0",
 ]
 
@@ -61,15 +63,24 @@ slurm_dashboard = [
     "static/js/*.js",
 ]
 
+[tool.black]
+line-length = 100
+target-version = ["py38"]
+
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py38"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
+# Keep typing.List/Optional spellings: the package supports Python 3.8.
+ignore = ["UP006", "UP007", "UP035", "UP037", "UP045"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/fake_slurm/*" = ["E501"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.8"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
