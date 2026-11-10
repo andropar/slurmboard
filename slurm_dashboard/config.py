@@ -75,7 +75,9 @@ class LogPattern:
         # Convert pattern to regex
         regex_pattern = re.escape(self.pattern)
         regex_pattern = regex_pattern.replace(r"\{name\}", r"(?P<name>[^/]+)")
-        regex_pattern = regex_pattern.replace(r"\{id\}", r"(?P<id>\d+)")
+        regex_pattern = regex_pattern.replace(
+            r"\{id\}", r"(?P<id>[0-9]+(?:_[0-9]+)?(?:\+[0-9]+)?)"
+        )
         regex_pattern = regex_pattern.replace(r"\{stream\}", r"(?P<stream>out|err)")
         regex_pattern = f"^{regex_pattern}$"
 
@@ -148,7 +150,7 @@ Log pattern examples:
 
 Template variables:
   {name}   - Job/script name
-  {id}     - Job ID (digits only)
+  {id}     - Numeric job ID, individual array task, or heterogeneous component ID
   {stream} - "out" for stdout, "err" for stderr
 """,
     )

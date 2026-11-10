@@ -2,6 +2,7 @@ const runningBody = document.getElementById('running-body');
 const recentBody = document.getElementById('recent-body');
 const logPanel = document.getElementById('log-content');
 const logTitle = document.getElementById('log-title');
+const logPopup = document.getElementById('log-popup');
 const searchBox = document.getElementById('search-box');
 const scrollToggle = document.getElementById('scroll-toggle');
 const themeToggle = document.getElementById('theme-toggle');
@@ -13,6 +14,8 @@ const logSearchClose = document.getElementById('log-search-close');
 
 // Theme handling
 function getPreferredTheme() {
+    const param = new URLSearchParams(window.location.search).get('scoutTheme');
+    if (param === 'light' || param === 'dark') return param;
     const stored = localStorage.getItem('theme');
     if (stored) return stored;
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
@@ -404,8 +407,7 @@ function exitCompareMode() {
     comparePanes = [];
     selectedForCompare.clear();
 
-    // Restore normal view
-    document.getElementById('log-wrapper').style.display = 'flex';
+    document.getElementById('dashboard-layout').classList.remove('comparing');
     const compareView = document.getElementById('compare-view');
     if (compareView) compareView.remove();
 
@@ -415,8 +417,8 @@ function exitCompareMode() {
 }
 
 function renderCompareView() {
-    // Hide normal log panel
-    document.getElementById('log-wrapper').style.display = 'none';
+    closeLogPopup();
+    document.getElementById('dashboard-layout').classList.add('comparing');
 
     // Create comparison view
     let compareView = document.getElementById('compare-view');
@@ -808,7 +810,7 @@ function renderErrorSummary() {
     summary.innerHTML = html;
 
     // Insert before log panel
-    const logWrapper = document.getElementById('log-wrapper');
+    const logWrapper = logPanel.parentElement;
     logWrapper.insertBefore(summary, logPanel);
 }
 
@@ -1254,7 +1256,7 @@ function renderResubmitSection(jobId, info) {
         </div>
         <div class="resubmit-actions">
             ${info.script_path ? `
-                <button class="resubmit-btn" onclick="viewScript('${info.script_path.replace(/'/g, "\\'")}')">View Script</button>
+                <button class="resubmit-btn" onclick="viewScript(decodeURIComponent('${encodeURIComponent(info.script_path).replace(/'/g, '%27')}'))">View current source</button>
                 <button class="resubmit-btn primary" onclick="showResubmitDialog('${jobId}')">Resubmit</button>
             ` : `<span class="resubmit-unavailable">Script path not available</span>`}
         </div>
@@ -1304,9 +1306,10 @@ function showScriptModal(path, content, truncated) {
     modal.innerHTML = `
         <div class="modal-content">
             <div class="modal-header">
-                <h3>Script: ${path.split('/').pop()}</h3>
+                <h3>Current source file: ${escapeHtml(path.split('/').pop())}</h3>
                 <button class="modal-close" onclick="closeScriptModal()">&times;</button>
             </div>
+            <div class="script-truncated">This source file may have changed since submission. It is not Slurm's stored copy.</div>
             <pre class="script-content">${escapeHtml(content)}</pre>
             ${truncated ? '<div class="script-truncated">Script truncated (max 200 lines)</div>' : ''}
         </div>
@@ -1324,6 +1327,59 @@ function closeScriptModal() {
     const modal = document.getElementById('script-modal');
     if (modal) modal.remove();
 }
+
+async function viewSubmittedScript(jobId) {
+    closeScriptModal();
+    const modal = document.createElement('div');
+    modal.id = 'script-modal';
+    modal.className = 'modal-overlay submitted-script-viewer';
+    modal.innerHTML = `
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="submitted-script-title">
+            <div class="modal-header">
+                <h3 id="submitted-script-title">Submitted batch script - job ${escapeHtml(jobId)}</h3>
+                <button class="modal-close" aria-label="Close submitted script" onclick="closeScriptModal()">&times;</button>
+            </div>
+            <div class="script-truncated">Slurm's stored copy, not the current source file. Command-line overrides and referenced files are not included.</div>
+            <div class="script-truncated script-status" role="status">Loading submitted script...</div>
+            <pre class="script-content" hidden></pre>
+        </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', event => {
+        if (event.target === modal) closeScriptModal();
+    });
+    modal.querySelector('.modal-close').focus();
+    const status = modal.querySelector('.script-status');
+    const preview = modal.querySelector('.script-content');
+    try {
+        const res = await fetch(`/api/submitted_script/${encodeURIComponent(jobId)}`);
+        const data = await res.json();
+        // A closed or superseded request must not update another job's viewer.
+        if (document.getElementById('script-modal') !== modal) return;
+        if (!res.ok || data.error) {
+            status.textContent = data.error || `Failed to load submitted script (HTTP ${res.status}).`;
+            if (data.attempts) {
+                status.textContent += '\n' + data.attempts.map(
+                    attempt => `${attempt.source}: ${attempt.message}`
+                ).join('\n');
+            }
+            return;
+        }
+        status.textContent = `Retrieved from Slurm ${data.source}.` + (data.truncated
+            ? ` Preview truncated at ${data.max_lines} lines or ${data.max_bytes} bytes.`
+            : '');
+        preview.textContent = data.content;
+        preview.hidden = false;
+    } catch (err) {
+        console.error('Submitted script fetch error:', err);
+        if (document.getElementById('script-modal') === modal) {
+            status.textContent = 'Failed to load submitted script: network or response error. Close and retry.';
+        }
+    }
+}
+
+document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') closeScriptModal();
+});
 
 function escapeHtml(text) {
     return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -1847,6 +1903,7 @@ function renderRunning(rows) {
             <td class="col-actions">
                 <button onclick="openLog('${job.log_key}','stdout')">stdout</button>
                 <button onclick="openLog('${job.log_key}','stderr')">stderr</button>
+                <button onclick="event.stopPropagation(); viewSubmittedScript('${job.id}')" title="View the batch script stored by Slurm">script</button>
                 <button onclick="cancelJob('${job.id}')" style="background: var(--status-failed-bg); color: var(--status-failed-text);">cancel</button>
             </td>
         </tr>
@@ -1878,6 +1935,7 @@ function renderRecent(rows) {
                 <div class="job-actions">
                     <button class="log-btn" onclick="event.stopPropagation(); openLog('${job.log_key}','stdout')" title="View stdout">out</button>
                     <button class="log-btn log-btn-err" onclick="event.stopPropagation(); openLog('${job.log_key}','stderr')" title="View stderr">err</button>
+                    <button class="log-btn" onclick="event.stopPropagation(); viewSubmittedScript('${job.id}')" title="View the batch script stored by Slurm">script</button>
                     <button class="expand-btn" onclick="toggleJobExpand('${job.id}')" title="Toggle details">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
                     </button>
@@ -1972,6 +2030,29 @@ async function cancelJob(jobId) {
     }
 }
 
+function showLogPopup() {
+    const card = document.getElementById('log-panel');
+    card.classList.remove('widget-minimized', 'widget-hidden');
+    logPopup.hidden = false;
+    const close = logPopup.querySelector('.log-popup-close');
+    if (close) close.focus();
+}
+
+function closeLogPopup() {
+    if (logStream) {
+        logStream.close();
+        logStream = null;
+    }
+    currentLogKey = null;
+    originalLogContent = '';
+    logTitle.textContent = 'Logs';
+    logPanel.textContent = '';
+    logPopup.hidden = true;
+    document.querySelectorAll('.active-log').forEach(row => {
+        row.classList.remove('active-log');
+    });
+}
+
 function openLog(logKey, kind) {
     currentLogKey = logKey;
     currentLogKind = kind;
@@ -1988,6 +2069,8 @@ function openLog(logKey, kind) {
     document.querySelectorAll('tbody tr').forEach(row => {
         row.classList.toggle('active-log', row.dataset.logKey === logKey);
     });
+
+    showLogPopup();
 
     const params = new URLSearchParams({ log_key: logKey, kind });
     logStream = new EventSource(`/stream_log?${params.toString()}`);
@@ -2097,6 +2180,9 @@ logSearchInput.addEventListener('keydown', (e) => {
 logSearchPrev.addEventListener('click', goToPrevMatch);
 logSearchNext.addEventListener('click', goToNextMatch);
 logSearchClose.addEventListener('click', clearLogSearch);
+logPopup.addEventListener('click', (e) => {
+    if (e.target === logPopup) closeLogPopup();
+});
 
 document.addEventListener('keydown', (e) => {
     if (e.key === '/' && e.target.tagName !== 'INPUT') {
@@ -2110,7 +2196,7 @@ document.addEventListener('keydown', (e) => {
     }
     // Ctrl+F or Cmd+F in log panel area focuses log search
     if ((e.key === 'f' || e.key === 'F') && (e.ctrlKey || e.metaKey)) {
-        const logWrapper = document.getElementById('log-wrapper');
+        const logWrapper = logPanel.parentElement;
         if (logWrapper && logWrapper.contains(document.activeElement)) {
             e.preventDefault();
             logSearchInput.focus();
@@ -2121,16 +2207,8 @@ document.addEventListener('keydown', (e) => {
         logSearchInput.blur();
         if (logSearchInput.value) {
             clearLogSearch();
-        } else if (logStream) {
-            logStream.close();
-            logStream = null;
-            currentLogKey = null;
-            originalLogContent = '';
-            logTitle.textContent = 'Logs';
-            logPanel.textContent = '';
-            document.querySelectorAll('tbody tr').forEach(row => {
-                row.classList.remove('active-log');
-            });
+        } else if (!logPopup.hidden) {
+            closeLogPopup();
         }
     }
     if (e.key === 'r' && e.target.tagName !== 'INPUT') {
@@ -3623,6 +3701,7 @@ async function openJobDetailsModal(jobId) {
             </div>
 
             <div class="job-details-actions">
+                <button class="btn-secondary" onclick="viewSubmittedScript('${jobId}')">View submitted script</button>
                 <button class="btn-secondary" onclick="openLog('${job.log_key}','stdout'); closeJobDetailsModal();">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                     View stdout
@@ -4519,8 +4598,7 @@ const layoutPresets = {
         widgets: {
             insights: { visible: true, minimized: false },
             running: { visible: true, minimized: false },
-            recent: { visible: true, minimized: false },
-            logs: { visible: true, minimized: false }
+            recent: { visible: true, minimized: false }
         },
         gridTemplate: null // Use default CSS grid
     },
@@ -4529,8 +4607,7 @@ const layoutPresets = {
         widgets: {
             insights: { visible: true, minimized: true },
             running: { visible: true, minimized: false },
-            recent: { visible: true, minimized: false },
-            logs: { visible: true, minimized: true }
+            recent: { visible: true, minimized: false }
         },
         gridTemplate: null
     },
@@ -4539,8 +4616,7 @@ const layoutPresets = {
         widgets: {
             insights: { visible: false, minimized: false },
             running: { visible: true, minimized: true },
-            recent: { visible: true, minimized: true },
-            logs: { visible: true, minimized: false }
+            recent: { visible: true, minimized: true }
         },
         gridTemplate: null
     },
@@ -4549,8 +4625,7 @@ const layoutPresets = {
         widgets: {
             insights: { visible: false, minimized: false },
             running: { visible: true, minimized: false },
-            recent: { visible: true, minimized: false },
-            logs: { visible: true, minimized: true }
+            recent: { visible: true, minimized: false }
         },
         gridTemplate: null
     }

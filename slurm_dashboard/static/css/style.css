@@ -762,10 +762,34 @@ button.copy-btn:hover { background: #38a169; }
 
 .layout {
     display: grid;
-    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.75fr);
+    grid-template-columns: minmax(0, 1fr);
     grid-gap: 24px;
     flex: 1;
     min-height: 0;
+}
+
+/* Logs open in a pop-up; the second column is only used by the compare view. */
+.layout.comparing {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.75fr);
+}
+
+.log-popup[hidden] {
+    display: none;
+}
+
+.log-popup #log-panel {
+    width: min(1200px, 100%);
+    height: min(85vh, 900px);
+    min-height: 280px;
+    flex: none;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
+}
+
+.log-popup .log-popup-close {
+    flex: none;
 }
 
 .table-column {
@@ -2031,6 +2055,102 @@ button.copy-btn:hover { background: #38a169; }
     color: var(--text-faint);
     background: var(--bg-secondary);
     border-top: 1px solid var(--border-color);
+}
+
+:root {
+  color-scheme: light;
+  --cp-bg: #f7f4ef;
+  --cp-bg-elevated: #fcfbf8;
+  --cp-surface: #ffffff;
+  --cp-surface-soft: #f5f5f5;
+  --cp-border: #dedede;
+  --cp-border-strong: #919191;
+  --cp-text: #242424;
+  --cp-text-muted: #5c5c5c;
+  --cp-text-soft: #6f6f6f;
+  --cp-accent: #b11f4b;
+  --cp-accent-hover: #9a1a41;
+  --cp-accent-soft: rgba(177, 31, 75, 0.08);
+  --cp-accent-fg: #ffffff;
+  --cp-success: #16a34a;
+  --cp-danger: #dc2626;
+  --cp-warning: #f59e0b;
+  --cp-link: #0078d4;
+  --cp-shadow: 0 18px 48px rgba(0, 0, 0, 0.12);
+  --cp-overlay: rgba(255, 255, 255, 0.8);
+  --cp-panel: rgba(255, 255, 255, 0.86);
+  --cp-panel-strong: rgba(255, 255, 255, 0.96);
+  --cp-sheen: rgba(255, 255, 255, 0.55);
+  --cp-highlight: rgba(177, 31, 75, 0.12);
+}
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --cp-bg: #3d3b3a;
+  --cp-bg-elevated: #343231;
+  --cp-surface: #292929;
+  --cp-surface-soft: #2e2e2e;
+  --cp-border: #474747;
+  --cp-border-strong: #5f5f5f;
+  --cp-text: #dedede;
+  --cp-text-muted: #919191;
+  --cp-text-soft: #b0b0b0;
+  --cp-accent: #fd8ea1;
+  --cp-accent-hover: #fb7b91;
+  --cp-accent-soft: rgba(253, 142, 161, 0.14);
+  --cp-accent-fg: #1a1a1a;
+  --cp-success: #4ade80;
+  --cp-danger: #f87171;
+  --cp-warning: #fbbf24;
+  --cp-link: #4da6ff;
+  --cp-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+  --cp-overlay: rgba(41, 41, 41, 0.88);
+  --cp-panel: rgba(41, 41, 41, 0.72);
+  --cp-panel-strong: rgba(41, 41, 41, 0.96);
+  --cp-sheen: rgba(255, 255, 255, 0.04);
+  --cp-highlight: rgba(253, 142, 161, 0.12);
+}
+
+.submitted-script-viewer {
+    background: var(--cp-overlay);
+    font-family: "Segoe UI", Aptos, Calibri, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.submitted-script-viewer .modal-content {
+    width: 900px;
+    background: var(--cp-surface);
+    color: var(--cp-text);
+    border-color: var(--cp-border);
+    box-shadow: var(--cp-shadow);
+}
+
+.submitted-script-viewer .modal-header,
+.submitted-script-viewer .script-truncated {
+    background: var(--cp-surface-soft);
+    color: var(--cp-text-muted);
+    border-color: var(--cp-border);
+}
+
+.submitted-script-viewer .modal-header h3,
+.submitted-script-viewer .modal-close {
+    color: var(--cp-text);
+}
+
+.submitted-script-viewer .modal-close:hover {
+    background: var(--cp-highlight);
+    color: var(--cp-accent);
+}
+
+.submitted-script-viewer .script-content {
+    background: var(--cp-surface);
+    color: var(--cp-text);
+    font-family: Consolas, "Courier New", Courier, monospace;
+    white-space: pre;
+}
+
+.submitted-script-viewer .script-status {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    overflow-y: auto;
 }
 
 /* Resubmit dialog styles */
@@ -5219,7 +5339,7 @@ tr.batch-selected:hover {
 }
 
 /* Layout-specific grid adjustments */
-.layout[data-layout="debugging"] {
+.layout.comparing[data-layout="debugging"] {
     grid-template-columns: 1fr 2fr;
 }
 
@@ -5228,12 +5348,15 @@ tr.batch-selected:hover {
     overflow-y: auto;
 }
 
-.layout[data-layout="compact"] {
+.layout.comparing[data-layout="compact"] {
     grid-template-columns: 1fr 1fr;
 }
 
-.layout[data-layout="compact"] #log-panel {
-    grid-row: span 1;
+@media (max-width: 1100px) {
+    .layout.comparing,
+    .layout.comparing[data-layout] {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* Running panel header row adjustments for widget controls */
@@ -5358,6 +5481,29 @@ tr.batch-selected:hover {
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 280px;
+}
+
+.job-row.expanded .job-row-main {
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr);
+    align-items: start;
+}
+
+.job-row.expanded .job-info {
+    flex-wrap: wrap;
+}
+
+.job-row.expanded .job-name {
+    flex-basis: 100%;
+    min-width: 0;
+    max-width: none;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.job-row.expanded .job-actions {
+    grid-column: 2;
+    flex-wrap: wrap;
 }
 
 .job-state-badge {
