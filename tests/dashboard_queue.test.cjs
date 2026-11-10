@@ -13,6 +13,11 @@ function setup(fetch = async () => ({ok: true, json: async () => ({jobs: [], err
         return {
             textContent: '', innerHTML: '', value: '', hidden: false, disabled: false,
             dataset: {}, scrollTop: 0, scrollHeight: 50, listeners: new Map(),
+            style: {setProperty(name, value) { this[name] = value; }},
+            getBoundingClientRect: () => ({left: 0, width: 1612}),
+            setPointerCapture(id) { this.pointer = id; },
+            hasPointerCapture(id) { return this.pointer === id; },
+            releasePointerCapture() { this.pointer = null; },
             classList: {
                 add: name => classes.add(name), remove: name => classes.delete(name),
                 toggle(name, on) { if (on) classes.add(name); else classes.delete(name); },
@@ -28,6 +33,8 @@ function setup(fetch = async () => ({ok: true, json: async () => ({jobs: [], err
     };
     get('page-size').value = '100';
     get('history').value = '7';
+    get('viewer').hidden = true;
+    get('viewer-divider').hidden = true;
     const streams = [];
     class EventSource {
         constructor(url) { this.url = url; this.closed = false; streams.push(this); }
@@ -36,7 +43,8 @@ function setup(fetch = async () => ({ok: true, json: async () => ({jobs: [], err
     const selectors = new Map();
     const document = {
         hidden: false, body: element(), documentElement: element(),
-        getElementById: get, addEventListener() {},
+        getElementById: get, listeners: new Map(),
+        addEventListener(name, callback) { this.listeners.set(name, callback); },
         querySelectorAll: () => [],
         querySelector(selector) {
             if (!selectors.has(selector)) selectors.set(selector, element());
@@ -45,7 +53,10 @@ function setup(fetch = async () => ({ok: true, json: async () => ({jobs: [], err
     };
     const context = vm.createContext({
         document, fetch, console: {error() {}}, AbortController, EventSource, URLSearchParams,
-        localStorage: {setItem() {}}, window: {addEventListener() {}}, setInterval() {},
+        localStorage: {setItem() {}},
+        window: {innerWidth: 1612, listeners: new Map(),
+            addEventListener(name, callback) { this.listeners.set(name, callback); }},
+        setInterval() {},
     });
     // Keep startup calls out so each test controls its own network requests.
     vm.runInContext(source.slice(0, source.lastIndexOf("$('refresh').addEventListener")), context);
@@ -196,4 +207,70 @@ test('network failures retain prior queue data with a stale warning', async () =
     assert.match(fixture.get('queue-error').textContent, /offline.*previous data.*stale/);
     assert.match(fixture.get('results').textContent, /101–200 of 212/);
     assert.equal(fixture.get('refresh').disabled, false);
+});
+
+test('right panel starts at 60/40, retains adjustment between files, and Escape restores queue', async () => {
+    const fixture = setup();
+    fixture.run("jobs = [{id:'1', name:'one', log_key:'one::1'}]");
+    await fixture.context.openViewer('1', 'stdout');
+    const divider = fixture.get('viewer-divider');
+    assert.equal(fixture.get('viewer').hidden, false);
+    assert.equal(divider.hidden, false);
+    assert.equal(fixture.get('split-layout').style['--queue-width'], '60fr');
+    assert.equal(fixture.get('split-layout').style['--viewer-width'], '40fr');
+    divider.listeners.get('keydown')({key: 'ArrowRight', preventDefault() {}});
+    assert.equal(divider.getAttribute('aria-valuenow'), '62');
+    await fixture.context.openViewer('1', 'stderr');
+    assert.equal(divider.getAttribute('aria-valuenow'), '62');
+    fixture.context.document.listeners.get('keydown')({key: 'Escape'});
+    assert.equal(fixture.get('viewer').hidden, true);
+    assert.equal(divider.hidden, true);
+    assert.equal(fixture.streams[1].closed, true);
+});
+
+test('dragging clamps both panes, captures the pointer and stops on cancel or close', async () => {
+    const fixture = setup();
+    fixture.run("jobs = [{id:'1', name:'one', log_key:'one::1'}]");
+    await fixture.context.openViewer('1', 'stdout');
+    const divider = fixture.get('viewer-divider');
+    const send = (type, extra = {}) => divider.listeners.get(type)({
+        button: 0, isPrimary: true, pointerId: 7, preventDefault() {}, ...extra,
+    });
+    send('pointerdown', {button: 2});
+    assert.equal(divider.pointer, undefined);
+    send('pointerdown');
+    assert.equal(divider.pointer, 7);
+    send('pointermove', {clientX: 806, pointerId: 8});
+    assert.equal(divider.getAttribute('aria-valuenow'), '60');
+    send('pointermove', {clientX: 806});
+    assert.equal(divider.getAttribute('aria-valuenow'), '50');
+    send('pointermove', {clientX: -100});
+    assert.equal(divider.getAttribute('aria-valuenow'), '20');
+    send('pointermove', {clientX: 2000});
+    assert.equal(divider.getAttribute('aria-valuenow'), '80');
+    send('pointercancel');
+    assert.equal(divider.pointer, null);
+    send('pointermove', {clientX: 806});
+    assert.equal(divider.getAttribute('aria-valuenow'), '80');
+    send('pointerdown');
+    fixture.context.closeViewer();
+    assert.equal(divider.pointer, null);
+});
+
+test('keyboard and viewport resizing keep both panes at least 320 pixels wide', async () => {
+    const fixture = setup();
+    fixture.get('split-layout').getBoundingClientRect = () => ({left: 0, width: 812});
+    fixture.run("jobs = [{id:'1', name:'one', log_key:'one::1'}]");
+    await fixture.context.openViewer('1', 'stdout');
+    const divider = fixture.get('viewer-divider');
+    const key = name => divider.listeners.get('keydown')({key: name, preventDefault() {}});
+    key('Home');
+    assert.equal(divider.getAttribute('aria-valuenow'), '40');
+    key('End');
+    assert.equal(divider.getAttribute('aria-valuenow'), '60');
+    key('ArrowLeft');
+    assert.equal(divider.getAttribute('aria-valuenow'), '58');
+    fixture.get('split-layout').getBoundingClientRect = () => ({left: 0, width: 732});
+    fixture.context.window.listeners.get('resize')();
+    assert.equal(divider.getAttribute('aria-valuenow'), '56');
 });

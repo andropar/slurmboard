@@ -5,7 +5,51 @@ let page = 1, totalPages = 1;
 let viewerJob = null, logStream = null, viewerRequest = 0, queueRequest = 0;
 let queueController = null, scriptController = null, followLog = true;
 let queueLoading = true, queueError = false, logText = '';
+let queueWidth = 60, resizePointer = null;
 const $ = id => document.getElementById(id);
+function updateSplit(value = queueWidth) {
+  const width = $('split-layout').getBoundingClientRect().width - 12;
+  const minimum = width > 0 ? Math.min(50, Math.max(20, 320 / width * 100)) : 20;
+  queueWidth = Math.max(minimum, Math.min(100 - minimum, value));
+  $('split-layout').style.setProperty('--queue-width', `${queueWidth}fr`);
+  $('split-layout').style.setProperty('--viewer-width', `${100 - queueWidth}fr`);
+  $('viewer-divider').setAttribute('aria-valuemin', String(Math.round(minimum)));
+  $('viewer-divider').setAttribute('aria-valuemax', String(Math.round(100 - minimum)));
+  $('viewer-divider').setAttribute('aria-valuenow', String(Math.round(queueWidth)));
+  $('viewer-divider').setAttribute('aria-valuetext', `Jobs ${Math.round(queueWidth)}%, files ${Math.round(100 - queueWidth)}%`);
+}
+function stopResizing() {
+  if (resizePointer !== null && $('viewer-divider').hasPointerCapture(resizePointer)) {
+    $('viewer-divider').releasePointerCapture(resizePointer);
+  }
+  resizePointer = null;
+  document.body.classList.remove('resizing');
+}
+$('viewer-divider').addEventListener('pointerdown', event => {
+  if (event.button !== 0 || !event.isPrimary) return;
+  event.preventDefault();
+  resizePointer = event.pointerId;
+  $('viewer-divider').setPointerCapture(resizePointer);
+  document.body.classList.add('resizing');
+});
+$('viewer-divider').addEventListener('pointermove', event => {
+  if (event.pointerId !== resizePointer) return;
+  const bounds = $('split-layout').getBoundingClientRect();
+  updateSplit((event.clientX - bounds.left - 6) / (bounds.width - 12) * 100);
+});
+for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+  $('viewer-divider').addEventListener(event, stopResizing);
+}
+$('viewer-divider').addEventListener('keydown', event => {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+  event.preventDefault();
+  updateSplit(event.key === 'Home' ? 0 : event.key === 'End' ? 100
+    : queueWidth + (event.key === 'ArrowRight' ? 2 : -2));
+});
+window.addEventListener('resize', () => {
+  stopResizing();
+  if (!$('viewer').hidden && window.innerWidth > 720) updateSplit();
+});
 const escape = text => String(text).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const failedStates = new Set(['FAILED', 'TIMEOUT', 'OUT_OF_MEMORY', 'NODE_FAIL', 'BOOT_FAIL', 'DEADLINE', 'PREEMPTED', 'REVOKED']);
 const runningStates = new Set(['RUNNING', 'COMPLETING', 'CONFIGURING', 'SUSPENDED', 'RESIZING', 'STAGE_OUT']);
@@ -99,6 +143,8 @@ async function openViewer(id, file) {
   viewerJob = job;
   selectedId = id; selectedFile = file;
   $('viewer').hidden = false; document.body.classList.add('viewer-open');
+  $('viewer-divider').hidden = false;
+  if (window.innerWidth > 720) updateSplit();
   $('viewer-id').textContent = `JOB ${job.id} / ${job.status}`;
   $('viewer-title').textContent = job.name;
   document.querySelectorAll('[data-file]').forEach(tab => {
@@ -114,7 +160,6 @@ async function openViewer(id, file) {
   $('file-content').scrollTop = 0;
   viewerMessage(file === 'script' ? 'Loading submitted script…' : 'Connecting to log…');
   render();
-  $('viewer').scrollIntoView({block:'nearest'});
   $(`tab-${file}`).focus({preventScroll:true});
   if (file === 'script') {
     scriptController = new AbortController();
@@ -172,6 +217,8 @@ async function openViewer(id, file) {
 function closeViewer() {
   const id = selectedId, file = selectedFile;
   stopViewerRequest();
+  stopResizing();
+  $('viewer-divider').hidden = true;
   viewerJob = null;
   $('viewer').hidden = true; document.body.classList.remove('viewer-open'); selectedId = null; render();
   const target = document.querySelector(`tr[data-id="${id}"] .row-actions [data-open="${file}"]`);
